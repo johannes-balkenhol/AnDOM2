@@ -1,0 +1,17 @@
+# databases - too large for git
+cathDB*
+scopeDB*
+scopeSeqDB*
+scopeseq_40.fa
+# binaries
+mmseqs/
+mmseqs-linux-avx2.tar.gz
+# temp files
+tmp/
+*.tsv
+*.pdb
+*.fasta
+queryDB*
+resultDB*
+__pycache__/
+.streamlit/
