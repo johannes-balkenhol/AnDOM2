@@ -1,15 +1,28 @@
 # AnDOM 2.0 — Structural Domain Finder
 
-Protein domain assignment by ensemble sequence+structure search — SCOPe 2.08, CATH50, MMseqs2, ESMFold, Foldseek. Update of AnDOM 2002.
+Protein domain assignment by ensemble sequence + structure search.
+Update of Schmidt, Bork & Dandekar (*J Chem Inf Comput Sci* 2002).
 
-## What it does
-Assigns structural domains to a protein sequence using two complementary layers:
-- **Sequence search:** MMseqs2 PSI-search against SCOPe 2.08 ASTRAL (15,177 domains, 40% identity cutoff)
-- **Structural search:** ESMFold structure prediction + Foldseek search against CATH50
+## Project structure
 
-Results are displayed as a two-row colour-coded domain architecture map with metadata, organism, fold classification, and direct PDB links.
+```
+AnDOM2/
+├── app.py              # Streamlit entry point
+├── config.py           # all paths, constants, examples
+├── requirements.txt
+├── src/
+│   ├── search/         # sequence.py · structure.py · ensemble.py
+│   ├── db/             # lookup.py (SCOPe metadata)
+│   ├── batch/          # processor.py (multi-FASTA batch)
+│   └── benchmark/      # run.py (coverage + precision benchmarks)
+├── docs/               # SVG diagrams, method figures
+├── tests/              # unit tests
+├── data/               # databases (gitignored — download separately)
+└── output/             # runtime temp files (gitignored)
+```
 
 ## Install
+
 ```bash
 mamba create -n andom python=3.10 -y
 mamba activate andom
@@ -18,20 +31,41 @@ pip install -r requirements.txt
 ```
 
 ## Database setup
+
 ```bash
 # SCOPe 2.08 ASTRAL sequences
-wget --no-check-certificate https://scop.berkeley.edu/downloads/scopeseq-2.08/astral-scopedom-seqres-gd-sel-gs-bib-40-2.08.fa -O scopeseq_40.fa
-mmseqs createdb scopeseq_40.fa scopeSeqDB
+wget --no-check-certificate \
+  https://scop.berkeley.edu/downloads/scopeseq-2.08/astral-scopedom-seqres-gd-sel-gs-bib-40-2.08.fa \
+  -O data/scopeseq_40.fa
+mmseqs createdb data/scopeseq_40.fa data/scopeSeqDB
 
 # CATH50 structural database
-foldseek databases CATH50 cathDB tmp
+foldseek databases CATH50 data/cathDB output/tmp
 ```
 
 ## Run
+
 ```bash
 streamlit run app.py --server.port 8501
 ```
 
-## Reference
-- Schmidt S, Bork P, Dandekar T (2002) A versatile structural domain analysis server using profile weight matrices. *J Chem Inf Comput Sci* 42:405-407
-- AnDOM 2.0 — Dandekar Lab, University of Wuerzburg, 2026
+## Batch processing
+
+```python
+from src.batch.processor import run_batch
+df = run_batch("my_proteins.fasta", use_structure=True)
+```
+
+## Benchmark
+
+```bash
+python3 src/benchmark/run.py data/my_test_set.fasta --gold data/gold_standard.tsv
+```
+
+## References
+
+- Schmidt S, Bork P, Dandekar T (2002) *J Chem Inf Comput Sci* 42:405–407
+- van Kempen M et al. (2023) *Nat Biotechnol* doi:10.1038/s41587-023-01773-0
+- Lin Z et al. (2023) *Science* 379:1123–1130
+- Fox NK et al. (2014) *Nucleic Acids Res* 42:D304–309
+- Sillitoe I et al. (2021) *Nucleic Acids Res* 49:D266–273

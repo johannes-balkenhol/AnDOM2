@@ -23,7 +23,7 @@ import pandas as pd
 from pathlib import Path
 from typing import Generator
 import sys
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 
 def _parse_fasta(fasta_path: str) -> Generator:

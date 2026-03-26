@@ -13,7 +13,7 @@ import requests
 import pandas as pd
 from pathlib import Path
 import sys
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from config import FOLDSEEK, CATH_DB, TMP_DIR, ESMFOLD_API, ESMFOLD_MAXLEN
 import db.lookup as lookup
 

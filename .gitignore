@@ -1,21 +1,20 @@
-# databases (too large for git)
-cathDB*
-scopeDB*
-scopeSeqDB*
-scopeseq_40.fa
-mmseqs/
-mmseqs-linux-avx2.tar.gz
-# runtime temp files
-tmp/
-*.pdb
-*.tsv
-query_input.fasta
-queryDB*
-resultDB*
-# python
+# ── data (too large for git, download separately) ─────────────────────────────
+data/
+
+# ── runtime output ─────────────────────────────────────────────────────────────
+output/
+
+# ── python ────────────────────────────────────────────────────────────────────
 __pycache__/
 *.pyc
+*.pyo
+.venv/
+*.egg-info/
+
+# ── streamlit ─────────────────────────────────────────────────────────────────
 .streamlit/
-# benchmark data (add manually)
-benchmark/test_sets/
-benchmark/results/
+
+# ── editor ────────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp

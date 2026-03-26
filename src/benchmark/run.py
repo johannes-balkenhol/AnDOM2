@@ -23,7 +23,7 @@ Test sets (place FASTA files in benchmark/test_sets/):
 import pandas as pd
 from pathlib import Path
 import sys
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from batch.processor import run_batch
 
 
