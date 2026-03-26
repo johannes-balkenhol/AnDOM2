@@ -317,7 +317,7 @@ with page[1]:
         prefill = st.session_state.get("_batch_fasta", "")
         b_text  = st.text_area(
             "…or paste multi-FASTA here", height=180,
-            value=prefill, key="batch_text"
+            key="batch_text"
         )
         b_struct = st.toggle(
             "Include structural search (≤400 aa only)", value=False, key="b_struct"
