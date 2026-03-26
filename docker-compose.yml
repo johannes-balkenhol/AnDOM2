@@ -1,0 +1,23 @@
+version: "3.9"
+
+services:
+  andom:
+    build: .
+    container_name: andom2
+    restart: unless-stopped
+    ports:
+      - "8501:8501"
+    volumes:
+      # databases — mount your data/ folder here
+      - ./data:/data:ro
+      # runtime output — writable
+      - ./output:/output
+    environment:
+      - ANDOM_DATA_DIR=/data
+      - ANDOM_OUTPUT_DIR=/output
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
