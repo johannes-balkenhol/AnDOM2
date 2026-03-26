@@ -18,7 +18,9 @@ OUTPUT_DIR = Path(_OUTPUT_OVERRIDE) if _OUTPUT_OVERRIDE else ROOT_DIR / "output"
 TMP_DIR    = str(OUTPUT_DIR / "tmp")
 
 # ── external tool paths ───────────────────────────────────────────────────────
-MMSEQS   = str(DATA_DIR / "mmseqs" / "bin" / "mmseqs")
+import shutil as _shutil
+_mmseqs_local = DATA_DIR / "mmseqs" / "bin" / "mmseqs"
+MMSEQS = str(_mmseqs_local) if _mmseqs_local.exists() else (_shutil.which("mmseqs") or "mmseqs")
 FOLDSEEK = "foldseek"
 
 # ── database paths ────────────────────────────────────────────────────────────
