@@ -164,7 +164,7 @@ with page[0]:
     st.markdown("**Try an example:**")
     ex_cols = st.columns(5)
     for i, (key, ex) in enumerate(EXAMPLES.items()):
-        if ex_cols[i].button(ex["label"], use_container_width=True, key=f"btn_{key}"):
+        if ex_cols[i].button(ex["label"], width="stretch", key=f"btn_{key}"):
             st.session_state["injected_seq"]  = ex["seq"]
             st.session_state["injected_desc"] = ex["desc"]
             st.rerun()
@@ -242,7 +242,7 @@ with page[0]:
                                  "ensemble_score": "Score",
                                  "seq_evalue": "Seq e-val",
                                  "struct_evalue": "Struct e-val"}),
-                    use_container_width=True, hide_index=True,
+                    width="stretch", hide_index=True,
                 )
 
             # domain bar
@@ -272,7 +272,7 @@ with page[0]:
                     disp["evalue"] = disp["evalue"].apply(lambda x: f"{float(x):.2e}")
                     disp["pident"] = disp["pident"].apply(lambda x: f"{float(x):.1f}%")
                     st.dataframe(
-                        disp, use_container_width=True,
+                        disp, width="stretch",
                         column_config={"PDB link": st.column_config.LinkColumn("PDB link")},
                     )
                     if os.path.exists("seq_results.tsv"):
@@ -292,7 +292,7 @@ with page[0]:
                     disp2["evalue"] = disp2["evalue"].apply(lambda x: f"{float(x):.2e}")
                     disp2["lddt"]   = disp2["lddt"].apply(lambda x: f"{float(x):.3f}")
                     st.dataframe(
-                        disp2, use_container_width=True,
+                        disp2, width="stretch",
                         column_config={"PDB link": st.column_config.LinkColumn("PDB link")},
                     )
                     if os.path.exists("struct_results.tsv"):
@@ -345,7 +345,7 @@ the protein is in the dark proteome, invisible to sequence methods.
     st.markdown("**Load a benchmark example set:**")
     ex_cols = st.columns(len(BATCH_EXAMPLES))
     for i, (key, ex) in enumerate(BATCH_EXAMPLES.items()):
-        if ex_cols[i].button(ex["label"], use_container_width=True, key=f"bex_{key}"):
+        if ex_cols[i].button(ex["label"], width="stretch", key=f"bex_{key}"):
             st.session_state["batch_example_fasta"] = ex["fasta"]
             st.session_state["batch_example_desc"]  = ex["desc"]
             st.rerun()
@@ -532,7 +532,7 @@ This directly answers: *does the ensemble deserve to exist alongside AlphaFold +
                     "Top-5 n":  d["top5"],
                 })
             df_bm = pd.DataFrame(rows)
-            st.dataframe(df_bm, use_container_width=True, hide_index=True)
+            st.dataframe(df_bm, width="stretch", hide_index=True)
             st.bar_chart(df_bm.set_index("Arm")[["Rank-1 %","Top-5 %"]])
 
             st.caption(
