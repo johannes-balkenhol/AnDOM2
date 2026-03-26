@@ -210,10 +210,10 @@ with page[0]:
                 c3.metric("🟠 Struct only (dark proteome)", n_struct)
 
                 st.dataframe(
-                    fused[["rank","ev","pdb_code","scope_domain","cath_domain",
+                    fused[["rank","ev","scope_domain","sccs","cath_domain",
                            "evidence","ensemble_score","seq_evalue","struct_evalue","lddt"]].rename(
-                        columns={"ev": "", "pdb_code": "PDB",
-                                 "scope_domain": "SCOPe domain",
+                        columns={"ev": "",
+                                 "scope_domain": "SCOPe domain", "sccs": "SCOP class",
                                  "cath_domain": "CATH domain",
                                  "ensemble_score": "Score",
                                  "seq_evalue": "Seq e-val",
