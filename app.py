@@ -15,8 +15,6 @@ import streamlit as st
 import pandas as pd
 from pathlib import Path
 
-import sys
-from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent / 'src'))
 sys.path.insert(0, str(Path(__file__).parent))
 
@@ -24,9 +22,20 @@ from config import SCOP_COLORS, SCOP_CLASSES, EXAMPLES, ESMFOLD_MAXLEN
 import db.lookup as lookup
 from search import sequence as seq_search
 from search import structure as str_search
-from search.ensemble import domain_bar_html, add_scores
+from search.ensemble import domain_bar_html, add_scores, fuse_results
+from batch.processor import (
+    BatchManager, parse_fasta_text, validate_sequences,
+    MAX_SEQUENCES, MAX_SEQ_LEN, MIN_SEQ_LEN,
+)
 
 st.set_page_config(page_title="AnDOM 2.0", layout="wide")
+
+# ── singletons ────────────────────────────────────────────────────────────────
+@st.cache_resource
+def get_batch_manager() -> BatchManager:
+    return BatchManager(output_root="output")
+
+batch_mgr = get_batch_manager()
 
 # ── sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
@@ -48,10 +57,14 @@ with st.sidebar:
     lk = lookup.all_domains()
     st.caption(f"SCOPe 2.08 — {len(lk):,} domains")
     st.caption("CATH50 structural DB")
+    st.divider()
+    st.caption(f"Batch limit: **{MAX_SEQUENCES}** sequences · **{MAX_SEQ_LEN}** aa max")
 
-page = st.tabs(["Search", "Methods"])
+page = st.tabs(["Search", "Batch", "Benchmark", "Methods"])
 
-# ── search tab ────────────────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 0 — Search (unchanged)
+# ══════════════════════════════════════════════════════════════════════════════
 with page[0]:
     st.title("AnDOM 2.0 — Structural Domain Finder")
     st.caption(
@@ -59,7 +72,6 @@ with page[0]:
         "MMseqs2 + ESMFold + Foldseek | Dandekar Lab Wuerzburg"
     )
 
-    # example buttons
     st.markdown("**Try an example:**")
     ex_cols = st.columns(5)
     for i, (key, ex) in enumerate(EXAMPLES.items()):
@@ -121,8 +133,23 @@ with page[0]:
                         df_str = df_str.head(max_hits)
                         st.success(f"Structure: {len(df_str)} CATH hits")
 
-            # add confidence scores
             df_seq, df_str = add_scores(df_seq, df_str)
+
+            # ensemble fusion table (new)
+            fused = fuse_results(df_seq, df_str)
+            if not fused.empty:
+                st.subheader("Ensemble Ranked Hits")
+                ev_icon = {"both": "🟢", "seq_only": "🔵", "struct_only": "🟠"}
+                fused["ev"] = fused["evidence"].map(ev_icon)
+                st.dataframe(
+                    fused[["rank","ev","domain_id","evidence",
+                           "ensemble_score","seq_evalue","struct_evalue"]].rename(
+                        columns={"ev": "", "domain_id": "Domain",
+                                 "ensemble_score": "Score",
+                                 "seq_evalue": "Seq e-val",
+                                 "struct_evalue": "Struct e-val"}),
+                    use_container_width=True, hide_index=True,
+                )
 
             # domain bar
             st.subheader("Domain Architecture Map")
@@ -140,7 +167,6 @@ with page[0]:
                 unsafe_allow_html=True,
             )
 
-            # results tables
             tab1, tab2 = st.tabs(["SCOPe sequence hits", "CATH structural hits"])
 
             with tab1:
@@ -190,8 +216,180 @@ with page[0]:
         "CATH50 (ESMFold + Foldseek) | Dandekar Lab Wuerzburg"
     )
 
-# ── methods tab ───────────────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 1 — Batch
+# ══════════════════════════════════════════════════════════════════════════════
 with page[1]:
+    st.title("Batch Processing")
+    st.caption(
+        f"Up to **{MAX_SEQUENCES}** sequences per job · "
+        f"{MIN_SEQ_LEN}–{MAX_SEQ_LEN} aa per sequence · "
+        "jobs run in the background"
+    )
+
+    with st.expander("➕ Submit new batch job", expanded=True):
+        b_upload = st.file_uploader(
+            "Upload multi-FASTA", type=["fa","fasta","txt"], key="batch_upload"
+        )
+        b_text = st.text_area(
+            "…or paste multi-FASTA here", height=150, key="batch_text"
+        )
+        b_struct = st.toggle(
+            "Include structural search (≤400 aa only)", value=False, key="b_struct"
+        )
+
+        raw = None
+        if b_upload:
+            raw = b_upload.read().decode()
+        elif b_text.strip():
+            raw = b_text
+
+        if st.button("Submit Batch Job", type="primary"):
+            if not raw:
+                st.warning("Please provide FASTA sequences.")
+            else:
+                seqs = parse_fasta_text(raw)
+                errs = validate_sequences(seqs)
+                if errs:
+                    for e in errs:
+                        st.error(e)
+                else:
+                    import tempfile
+                    with tempfile.NamedTemporaryFile(
+                        mode="w", suffix=".fa", delete=False
+                    ) as tmp:
+                        tmp.write(raw)
+                        tmp_path = tmp.name
+                    job_id = batch_mgr.submit(
+                        tmp_path,
+                        evalue=evalue,
+                        iterations=iterations,
+                        use_structure=b_struct,
+                    )
+                    st.success(
+                        f"Job **{job_id}** submitted — {len(seqs)} sequences. "
+                        "Refresh this page to track progress."
+                    )
+
+    st.subheader("Jobs")
+    jobs = batch_mgr.list_jobs()
+
+    if not jobs:
+        st.info("No batch jobs yet.")
+    else:
+        if st.button("🔄 Refresh"):
+            st.rerun()
+
+        status_icon = {
+            "queued": "🕐", "running": "⏳",
+            "done":   "✅", "failed":  "❌", "cancelled": "🚫",
+        }
+        for job in jobs:
+            s = job.get("status", "unknown")
+            with st.container(border=True):
+                c1, c2, c3 = st.columns([3, 2, 2])
+                c1.markdown(f"{status_icon.get(s,'❓')} **{job['job_id']}** — `{s}`")
+                total    = job.get("total", 0)
+                progress = job.get("progress", 0)
+                c2.caption(
+                    f"{progress}/{total} sequences" if total
+                    else job.get("submitted", "")[:19]
+                )
+                if s == "done":
+                    df_res = batch_mgr.results(job["job_id"])
+                    if not df_res.empty:
+                        c3.download_button(
+                            "⬇ TSV",
+                            df_res.to_csv(sep="\t", index=False),
+                            file_name=f"AnDOM_batch_{job['job_id']}.tsv",
+                            mime="text/tab-separated-values",
+                            key=f"dl_{job['job_id']}",
+                        )
+                elif s in ("queued", "running"):
+                    if c3.button("Cancel", key=f"cancel_{job['job_id']}"):
+                        batch_mgr.cancel(job["job_id"])
+                        st.rerun()
+                if job.get("error"):
+                    st.error(job["error"])
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 2 — Benchmark
+# ══════════════════════════════════════════════════════════════════════════════
+with page[2]:
+    st.title("Benchmark — Sequence vs Structure vs Ensemble")
+    st.markdown(
+        "Evaluate all three search arms on the built-in SCOPE-40 dataset "
+        "or your own FASTA. Metrics: **Rank-1 accuracy** and **Top-5 sensitivity**."
+    )
+
+    bm_scope = st.toggle("Use built-in SCOPE-40 dataset", value=True)
+
+    if bm_scope:
+        from config import SCOPE_FA
+        bm_fasta = SCOPE_FA
+        st.caption(f"Dataset: `{bm_fasta}`")
+    else:
+        bm_file = st.file_uploader(
+            "Upload SCOPE-style FASTA", type=["fa","fasta"], key="bm_upload"
+        )
+        bm_fasta = None
+        if bm_file:
+            import tempfile
+            with tempfile.NamedTemporaryFile(
+                mode="wb", suffix=".fa", delete=False
+            ) as tmp:
+                tmp.write(bm_file.read())
+                bm_fasta = tmp.name
+
+    bm_limit = st.number_input(
+        "Limit to first N sequences (0 = all)", min_value=0, value=100, step=10
+    )
+
+    if st.button("▶ Run Benchmark", type="primary"):
+        if not bm_fasta:
+            st.warning("Please provide a FASTA file.")
+        else:
+            from benchmark.run import run_arms_benchmark
+            import time as _time, json as _json
+            ts = _time.strftime("%Y%m%d_%H%M%S")
+            out_json = f"output/results/benchmark_{ts}.json"
+
+            with st.spinner("Running benchmark — this may take several minutes…"):
+                stats = run_arms_benchmark(
+                    bm_fasta,
+                    evalue=evalue,
+                    iterations=iterations,
+                    limit=int(bm_limit) if bm_limit > 0 else None,
+                    out_json=out_json,
+                )
+
+            st.success(f"Done — {stats['total']} sequences in {stats['elapsed_s']}s")
+
+            rows = []
+            for arm in ("seq_only", "struct_only", "ensemble"):
+                d = stats[arm]
+                rows.append({
+                    "Arm":      arm,
+                    "Rank-1 %": d["rank1_pct"],
+                    "Top-5 %":  d["top5_pct"],
+                    "Rank-1 n": d["rank1"],
+                    "Top-5 n":  d["top5"],
+                })
+            df_bm = pd.DataFrame(rows)
+            st.dataframe(df_bm, use_container_width=True, hide_index=True)
+            st.bar_chart(df_bm.set_index("Arm")[["Rank-1 %","Top-5 %"]])
+
+            st.download_button(
+                "⬇ Download benchmark JSON",
+                data=_json.dumps(stats, indent=2),
+                file_name=f"benchmark_{ts}.json",
+                mime="application/json",
+            )
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 3 — Methods (unchanged)
+# ══════════════════════════════════════════════════════════════════════════════
+with page[3]:
     st.title("Methods — AnDOM 2.0")
     st.markdown(
         "AnDOM 2.0 updates the original AnDOM server "
@@ -228,11 +426,11 @@ with page[1]:
 - Recovers domains invisible to sequence methods
 
 **Ensemble output**
-- Two-row domain architecture map
-- Hover tooltips with full annotation
-- Clickable PDB links per hit
-- TSV download for both layers
-- Local Streamlit (original server offline ~2010)
+- Rank-fused table: sequence × structure combined score
+- Two-row domain architecture map with hover tooltips
+- 🟢 both arms · 🔵 seq only · 🟠 struct only
+- Batch processing for proteome-scale runs
+- Benchmark: rank-1 / top-5 comparison across all arms
         """)
 
     st.subheader("References")
