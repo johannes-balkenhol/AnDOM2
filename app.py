@@ -1,11 +1,11 @@
 """
 AnDOM 2.0 — Streamlit web application.
-
-This file is intentionally thin: UI layout and user interaction only.
-All domain search logic lives in search/, db/, and batch/ modules.
 """
 import sys
 import os
+import json
+import time
+import threading
 import streamlit as st
 import pandas as pd
 from pathlib import Path
@@ -13,7 +13,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent / 'src'))
 sys.path.insert(0, str(Path(__file__).parent))
 
-from config import SCOP_COLORS, SCOP_CLASSES, EXAMPLES, ESMFOLD_MAXLEN
+from config import SCOP_COLORS, SCOP_CLASSES, EXAMPLES, ESMFOLD_MAXLEN, SCOPE_FA
 import db.lookup as lookup
 from search import sequence as seq_search
 from search import structure as str_search
@@ -32,97 +32,63 @@ def get_batch_manager() -> BatchManager:
 
 batch_mgr = get_batch_manager()
 
-# ── hard benchmark sequences ──────────────────────────────────────────────────
+# ── batch benchmark examples ──────────────────────────────────────────────────
 BATCH_EXAMPLES = {
     "dark_proteome": {
-        "label": "Dark proteome (ORFan genes, no homologs)",
-        "desc": (
-            "Proteins with zero or near-zero sequence homologs in any database. "
-            "InterPro/Pfam find nothing. AlphaFold can predict a structure but cannot "
-            "classify the domain. This is where the structural arm of AnDOM 2.0 adds value."
+        "label": "Dark proteome",
+        "fasta": (
+            ">FG_nucleoporin_fragment\n"
+            "MSNTGGFGFGSSFGSGFGSGFGSGFGSSFGSGFGSGFGSGFGSSFGSGFGSGFGSGFGSSFGSGFG\n"
+            ">Alpha_synuclein\n"
+            "MDVFMKGLSKAKEGVVAAAEKTKQGVAEAAGKTKEGVLYVGSKTKEGVVHGVATVAEKTKEQVTNVGG\n"
+            "AVVTGVTAVAQKTVEGAGSIAAATGFVKKDQLGKNEEGAPQEGILEDMPVDPDNEAYEMPSEEGYQDYEPEA\n"
+            ">Tau_repeat\n"
+            "MAEPRQEFEVMEDHAGTYGLGDRKDQGGYTMHQDQEGDTDAGLKESPLQTPTEDGSEEPGSETSDAKSTPT\n"
         ),
-        "fasta": """>UP000005640_ORFan_1
-MSSRSSRGRGGRSSRGRSSRGRGGRSSRGRSSRGRGGRSSRGRSSRGRGGR
->UP000005640_ORFan_2
-MASNDYTQQATQSYGAYPTQPGQGYSQQSSQPYGQQSYSGYSQSTDTSGYGQSSYSSYGQ
->Mycobacterium_PE_PGRS_1
-MAPEPAAPAPAPAPAPAPAPAPAPAPAPAPAPAPAPAPAPAPAPAPAPAPAPAPAPAPAP
-APAPAPAPAPAPAPAPAPAPAPAPAPAPAPAPAPAPAPAPAPAPAPAPAPAPAPAPAP
-""",
+        "desc": "Proteins with no/few sequence homologs — InterPro finds nothing, structural arm recovers domain class.",
     },
-    "fast_evolving": {
-        "label": "Fast-evolving viral/phage proteins",
-        "desc": (
-            "Viral and bacteriophage proteins evolve so fast that sequence methods "
-            "fail below ~20% identity — the 'twilight zone'. Structural search recovers "
-            "these when sequence search returns nothing. Critical for virology."
+    "viral_phage": {
+        "label": "Viral / phage proteins",
+        "fasta": (
+            ">HIV1_Vif_HXB2\n"
+            "MENRWQVMIVWQVDRMRIRTWKSLVKHHMYVSGKARGWFYRHHYESPHPRISSEVHIPLGDARLII\n"
+            "TTYWGLHTGERDWHLGQGVSIEWRKKRYSTQVDPELAD\n"
+            ">Lambda_phage_Cro\n"
+            "MTKQKTLQELRQELQHEAHELYNALIQRLEQEVQAELANQEQQLHALEQLERERLLKLA\n"
         ),
-        "fasta": """>HIV1_Vif_HXB2
-MENRWQVMIVWQVDRMRIRTWKSLVKHHMYVSGKARGWFYRHHYESPHPRISSEVHIPL
-GDARLIITTYWGLHTGERDWHLGQGVSIEWRKKRYSTQVDPELAD
->Lambda_phage_Cro
-MTKQKTLQELRQELQHEAHELYNALIQRLEQEVQAELANQEQQLHALEQLERERLLKLA
->T4_phage_gp5_baseplate
-MNIFEMLRIDEGLRLKIYKDTEGYYTIGIGHLLTKSPSLNAAKSELDKAIGRNCNGVITK
-DEAEKLFNQDVDAAVRGILRNAKLKPVYDSLDAVRRAALINMVFQMGETGVAGFTNSLRM
-""",
+        "desc": "Fast-evolving viral proteins below the twilight zone (~20% identity). Sequence methods fail, structural arm recovers.",
     },
-    "multidomain_hard": {
-        "label": "Multi-domain — one known, one novel",
-        "desc": (
-            "Proteins where one domain is well-characterised but a second "
-            "domain has no sequence homologs. Ensemble scoring flags the known "
-            "domain with high confidence (both arms) and the novel domain "
-            "as structure-only — exactly the complementarity we benchmark."
+    "multidomain": {
+        "label": "Multi-domain",
+        "fasta": (
+            ">Src_SH2_SH3\n"
+            "MGSNKSKPKDASQRRRSLEPAENVHGAGGGAFPASQTPSKPASADGHRGPSAAFAPAAAEKVLFGGFNSS\n"
+            "DTVTSPQRAGPLAGGVTTFVALYDYESRTETDLSFKKGERLQIVNNTEGDWWLAHSLSTGQTGYIPSNYW\n"
+            ">p53_DBD\n"
+            "SVVRCPHHERCSDSDGLAPPQHLIRVEGNLRVEYLDDRNTFRHSVVVPYEPPEVGSDCTTIHYNYMCNSSC\n"
+            "MGQMNRRPILTIITLEDSSGKLLGRNSFEVRVCACPGRDRRTEEENLRKKGEVVAPQHL\n"
         ),
-        "fasta": """>p53_full_with_disordered_TAD
-MEEPQSDPSVEPPLSQETFSDLWKLLPENNVLSPLPSQAMDDLMLSPDDIEQWFTEDPG
-PDEAPRMPEAAPPVAPAPAAPTPAAPAPAPSWPLSSSVPSQKTYPQGLNGTVNLFQSSHY
-SVVKQKDGQFEVTMDVTAPGTSVTIRNPRFQNLVTPQGRIKVSGNVPNLNAAVKRGDKK
-SVLHACIHSISQGGVSSEDGKKKKNLTQKAVNSTDLNIIDNLTENVKSNLQKLYNQLSK
->Src_kinase_SH3_novel_insert
-MGSNKSKPKDASQRRRSLEPAENVHGAGGGAFPASQTPSKPASADGHRGPSAAFAPAAAE
-KVLFGGFNSSDTVTSPQRAGPLAGGVTTFVALYDYESRTETDLSFKKGERLQIVNNTEGD
-WWLAHSLSTGQTGYIPSNYVAPSDSIQAEEWYFGKITRRESERLLLNAENPRGTFLVRESE
-""",
+        "desc": "Multi-domain proteins — ensemble shows both domains, evidence tagged per PDB match.",
     },
-    "intrinsically_disordered": {
-        "label": "Intrinsically disordered proteins (IDPs)",
-        "desc": (
-            "IDPs have no stable fold but often contain short linear motifs (SLiMs) "
-            "and transient structured regions. AlphaFold gives low pLDDT scores. "
-            "InterPro misses the structured segments. The ensemble can recover "
-            "transiently folded domains via the structural arm."
+    "disordered": {
+        "label": "Intrinsically disordered",
+        "fasta": (
+            ">p53_TAD\n"
+            "MEEPQSDPSVEPPLSQETFSDLWKLLPENNVLSPLPSQAMDDLMLSPDDIEQWFTEDPGP\n"
+            ">MBP_linker\n"
+            "GKPIPNPLLGLDSTRTGHHHHHH\n"
         ),
-        "fasta": """>FG_nucleoporin_Nup98
-MSNTGGFGFGSGFGSGFGSGFGSSFGSGFGSGFGSGFGSSFGSGFGSGFGSGFGSSFGS
-GFGSGFGSGFGSGFGSSFGSGFGSGFGSGFGSSFGSGFGSGFGSGFGSSFGSGFGSGFG
->Tau_repeat_domain
-MAEPRQEFEVMEDHAGTYGLGDRKDQGGYTMHQDQEGDTDAGLKESPLQTPTEDGSEEP
-GSETSDAKSTPTAEDVTAPLVDEGAPGKQAAAQPHTEIPEGTTAEEAGIGDTPSLEDEAA
-GHVTQARMVSKSKDGTGSDDKKAKGADGKTKIATPRGAAPPGQKGQANATRIPAKTPPAP
->Alpha_synuclein_Parkinsons
-MDVFMKGLSKAKEGVVAAAEKTKQGVAEAAGKTKEGVLYVGSKTKEGVVHGVATVAEKTK
-EQVTNVGGAVVTGVTAVAQKTVEGAGSIAAATGFVKKDQLGKNEEGAPQEGILEDMPVDP
-DNEAYEMPSEEGYQDYEPEA
-""",
+        "desc": "IDPs with transient structured regions — low pLDDT from AlphaFold, structural arm finds fold family.",
     },
-    "de_novo_designed": {
-        "label": "De novo designed proteins",
-        "desc": (
-            "Computationally designed proteins with no evolutionary history. "
-            "Zero sequence homologs by definition. AlphaFold can predict them "
-            "but cannot classify them. Only structural comparison to known folds "
-            "can reveal if they adopt a known topology. Pure structural arm test."
+    "de_novo": {
+        "label": "De novo designed",
+        "fasta": (
+            ">Designed_miniprotein\n"
+            "MAKMAEEILSQYGDNLPKEVLEYLEKNIAKSGKIFVEIKADNAIAAANAKAVLENAKEVLEAYKTGKVNLV\n"
+            ">Rosetta_designed_helix\n"
+            "MAEAAAKEAAAKEAAAKEAAAKEAAAKEAAAKEAAAK\n"
         ),
-        "fasta": """>Designed_TIM_barrel_de_novo
-MAKMAEEILSQYGDNLPKEVLEYLEKNIAKSGKIFVEIKADNAIAAANAKAVLENAKEVL
-EAYKTGKVNLVEKFDANLDAAKAKAVLEAAKEVLEAYKTGKVNLVEAFDANLDAAKAKAV
-LEAAKEVLEAYKTGKVNLVEAFDANLDAAKAKAVLE
->Designed_beta_propeller
-MSTGKVIKVLSANDQTGEVKITVHGKTVDVTVEEGDKVTLHYEGKAVDVSVEEGDKVTL
-HYEGKAVDVSVEEGDKVTLHYEGKAVDVSVEEGDKVTLHYEGKAVDVSVEE
-""",
+        "desc": "Computationally designed proteins — zero evolutionary signal, only structural arm can classify.",
     },
 }
 
@@ -147,7 +113,7 @@ with st.sidebar:
     st.caption(f"SCOPe 2.08 — {len(lk):,} domains")
     st.caption("CATH50 structural DB")
     st.divider()
-    st.caption(f"Batch limit: **{MAX_SEQUENCES}** sequences · **{MAX_SEQ_LEN}** aa max")
+    st.caption(f"Batch limit: **{MAX_SEQUENCES}** seq · **{MAX_SEQ_LEN}** aa max")
 
 page = st.tabs(["Search", "Batch", "Benchmark", "Methods"])
 
@@ -164,7 +130,7 @@ with page[0]:
     st.markdown("**Try an example:**")
     ex_cols = st.columns(5)
     for i, (key, ex) in enumerate(EXAMPLES.items()):
-        if ex_cols[i].button(ex["label"], width="stretch", key=f"btn_{key}"):
+        if ex_cols[i].button(ex["label"], use_container_width=True, key=f"btn_{key}"):
             st.session_state["injected_seq"]  = ex["seq"]
             st.session_state["injected_desc"] = ex["desc"]
             st.rerun()
@@ -190,8 +156,8 @@ with page[0]:
             use_struct_run = use_struct and n <= ESMFOLD_MAXLEN
             if use_struct and n > ESMFOLD_MAXLEN:
                 st.warning(
-                    f"Sequence is {n} aa — ESMFold public API limit is "
-                    f"{ESMFOLD_MAXLEN} aa. Structural search disabled."
+                    f"Sequence is {n} aa — ESMFold limit is {ESMFOLD_MAXLEN} aa. "
+                    "Structural search disabled."
                 )
 
             col_seq, col_str = st.columns(2)
@@ -199,9 +165,7 @@ with page[0]:
 
             with col_seq:
                 with st.spinner("Sequence search — SCOPe 2.08..."):
-                    df_seq, err = seq_search.run(
-                        fasta, evalue=evalue, iterations=iterations
-                    )
+                    df_seq, err = seq_search.run(fasta, evalue=evalue, iterations=iterations)
                 if err:
                     st.error(f"Sequence search failed: {err}")
                 elif df_seq is None or len(df_seq) == 0:
@@ -224,25 +188,37 @@ with page[0]:
 
             df_seq, df_str = add_scores(df_seq, df_str)
 
-            # ensemble fusion table
+            # ── ensemble fusion (matched by PDB code) ──────────────────────
             fused = fuse_results(df_seq, df_str)
             if not fused.empty:
                 st.subheader("Ensemble Ranked Hits")
                 st.caption(
-                    "🟢 found by both arms (high confidence) · "
-                    "🔵 sequence only · "
-                    "🟠 structure only (recovered by ESMFold+Foldseek)"
+                    "🟢 found by **both arms** (high confidence) · "
+                    "🔵 **sequence only** (SCOPe hit, no structure match) · "
+                    "🟠 **structure only** (dark proteome — recovered by ESMFold+Foldseek)"
                 )
                 ev_icon = {"both": "🟢", "seq_only": "🔵", "struct_only": "🟠"}
                 fused["ev"] = fused["evidence"].map(ev_icon)
+
+                # count summary
+                n_both   = (fused["evidence"] == "both").sum()
+                n_seq    = (fused["evidence"] == "seq_only").sum()
+                n_struct = (fused["evidence"] == "struct_only").sum()
+                c1, c2, c3 = st.columns(3)
+                c1.metric("🟢 Both arms", n_both)
+                c2.metric("🔵 Seq only",  n_seq)
+                c3.metric("🟠 Struct only (dark proteome)", n_struct)
+
                 st.dataframe(
-                    fused[["rank","ev","domain_id","evidence",
-                           "ensemble_score","seq_evalue","struct_evalue"]].rename(
-                        columns={"ev": "", "domain_id": "Domain",
+                    fused[["rank","ev","pdb_code","scope_domain","cath_domain",
+                           "evidence","ensemble_score","seq_evalue","struct_evalue","lddt"]].rename(
+                        columns={"ev": "", "pdb_code": "PDB",
+                                 "scope_domain": "SCOPe domain",
+                                 "cath_domain": "CATH domain",
                                  "ensemble_score": "Score",
                                  "seq_evalue": "Seq e-val",
                                  "struct_evalue": "Struct e-val"}),
-                    width="stretch", hide_index=True,
+                    use_container_width=True, hide_index=True,
                 )
 
             # domain bar
@@ -254,15 +230,14 @@ with page[0]:
             )
             st.markdown(
                 '<p style="font-size:11px;color:#888">'
-                "Top: SCOPe sequence hits (coloured by SCOP class) &nbsp;|&nbsp; "
-                "Bottom: CATH structural hits (dark) &nbsp;|&nbsp; "
-                f"Hover for details &nbsp;|&nbsp; 1 to {bar_len} aa</p>"
+                "Top: SCOPe sequence hits (coloured by SCOP class) · "
+                "Bottom: CATH structural hits (dark) · "
+                f"Hover for details · 1 to {bar_len} aa</p>"
                 + domain_bar_html(df_seq, df_str, bar_len),
                 unsafe_allow_html=True,
             )
 
             tab1, tab2 = st.tabs(["SCOPe sequence hits", "CATH structural hits"])
-
             with tab1:
                 if df_seq is not None and len(df_seq) > 0:
                     disp = df_seq[[
@@ -271,16 +246,11 @@ with page[0]:
                     ]].copy()
                     disp["evalue"] = disp["evalue"].apply(lambda x: f"{float(x):.2e}")
                     disp["pident"] = disp["pident"].apply(lambda x: f"{float(x):.1f}%")
-                    st.dataframe(
-                        disp, width="stretch",
-                        column_config={"PDB link": st.column_config.LinkColumn("PDB link")},
-                    )
+                    st.dataframe(disp, use_container_width=True,
+                        column_config={"PDB link": st.column_config.LinkColumn("PDB link")})
                     if os.path.exists("seq_results.tsv"):
-                        st.download_button(
-                            "Download SCOPe TSV",
-                            open("seq_results.tsv").read(),
-                            "AnDOM_scope.tsv",
-                        )
+                        st.download_button("Download SCOPe TSV",
+                            open("seq_results.tsv").read(), "AnDOM_scope.tsv")
                 else:
                     st.info("No sequence hits.")
 
@@ -291,24 +261,16 @@ with page[0]:
                     ]].copy()
                     disp2["evalue"] = disp2["evalue"].apply(lambda x: f"{float(x):.2e}")
                     disp2["lddt"]   = disp2["lddt"].apply(lambda x: f"{float(x):.3f}")
-                    st.dataframe(
-                        disp2, width="stretch",
-                        column_config={"PDB link": st.column_config.LinkColumn("PDB link")},
-                    )
+                    st.dataframe(disp2, use_container_width=True,
+                        column_config={"PDB link": st.column_config.LinkColumn("PDB link")})
                     if os.path.exists("struct_results.tsv"):
-                        st.download_button(
-                            "Download CATH TSV",
-                            open("struct_results.tsv").read(),
-                            "AnDOM_cath.tsv",
-                        )
+                        st.download_button("Download CATH TSV",
+                            open("struct_results.tsv").read(), "AnDOM_cath.tsv")
                 else:
                     st.info("No structural hits or structural search disabled.")
 
     st.divider()
-    st.caption(
-        "AnDOM 2.0 | SCOPe 2.08 ASTRAL 40% (MMseqs2 PSI) + "
-        "CATH50 (ESMFold + Foldseek) | Dandekar Lab Wuerzburg"
-    )
+    st.caption("AnDOM 2.0 | SCOPe 2.08 ASTRAL 40% (MMseqs2 PSI) + CATH50 (ESMFold + Foldseek) | Dandekar Lab Wuerzburg")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 1 — Batch
@@ -317,51 +279,45 @@ with page[1]:
     st.title("Batch Processing")
     st.caption(
         f"Up to **{MAX_SEQUENCES}** sequences per job · "
-        f"{MIN_SEQ_LEN}–{MAX_SEQ_LEN} aa per sequence · "
-        "jobs run in the background"
+        f"{MIN_SEQ_LEN}–{MAX_SEQ_LEN} aa · jobs run in background"
     )
 
-    # ── why AnDOM 2.0 exists ───────────────────────────────────────────────
-    with st.expander("💡 What can AnDOM 2.0 find that AlphaFold + Foldseek alone cannot?", expanded=False):
+    with st.expander("💡 Why AnDOM 2.0 alongside AlphaFold + Foldseek?", expanded=False):
         st.markdown("""
-AnDOM 2.0 is not a replacement for AlphaFold or Foldseek — it fills the gap **after** structure prediction:
-
-| Challenge | AlphaFold | Foldseek | InterPro/Pfam | **AnDOM 2.0** |
+| Challenge | AlphaFold | Foldseek | InterPro | **AnDOM 2.0** |
 |---|---|---|---|---|
-| Predicts 3D structure | ✅ | needs structure | ❌ | via ESMFold |
-| Assigns domain to SCOP/CATH class | ❌ | ✅ if DB has it | sequence only | **✅ seq + struct** |
-| Dark proteome (no homologs) | structure only | ❌ no hit | ❌ | **structural arm recovers** |
-| Fast-evolving viral proteins | structure only | weak | ❌ | **ensemble boosts** |
-| Multi-domain: one known, one novel | ❌ | partial | partial | **flags both, evidence tagged** |
-| Intrinsically disordered + folded domain | pLDDT low | poor | misses | **structural arm** |
-| De novo designed proteins | structure only | ❌ | ❌ | **structural arm** |
+| Assigns domain to SCOP/CATH class | ❌ | ✅ if DB hit | seq only | **seq + struct** |
+| Dark proteome (no homologs) | structure only | ❌ | ❌ | **structural arm** |
+| Fast-evolving viral proteins | structure only | weak | ❌ | **ensemble** |
+| Multi-domain, one novel | ❌ | partial | partial | **both flagged** |
+| Disordered + folded domain | low pLDDT | poor | misses | **structural arm** |
 
-**The key insight:** AlphaFold gives you coordinates. AnDOM 2.0 tells you *what fold family those coordinates belong to*, 
-using two independent lines of evidence. When both agree → high confidence. When only structure finds it → 
-the protein is in the dark proteome, invisible to sequence methods.
+🟠 `struct_only` hits = dark proteome recovery.
+🟢 `both` hits = high-confidence annotation.
         """)
 
-    # ── batch examples ────────────────────────────────────────────────────
+    # ── example buttons ───────────────────────────────────────────────────
     st.markdown("**Load a benchmark example set:**")
     ex_cols = st.columns(len(BATCH_EXAMPLES))
     for i, (key, ex) in enumerate(BATCH_EXAMPLES.items()):
-        if ex_cols[i].button(ex["label"], width="stretch", key=f"bex_{key}"):
-            st.session_state["batch_example_fasta"] = ex["fasta"]
-            st.session_state["batch_example_desc"]  = ex["desc"]
-            st.rerun()
+        if ex_cols[i].button(ex["label"], use_container_width=True, key=f"bex_{key}"):
+            st.session_state["_batch_fasta"] = ex["fasta"]
+            st.session_state["_batch_desc"]  = ex["desc"]
 
-    if "batch_example_desc" in st.session_state:
-        st.info(st.session_state["batch_example_desc"])
+    if "_batch_desc" in st.session_state:
+        st.info(st.session_state["_batch_desc"])
 
+    # ── submit form ───────────────────────────────────────────────────────
     with st.expander("➕ Submit new batch job", expanded=True):
         b_upload = st.file_uploader(
             "Upload multi-FASTA", type=["fa","fasta","txt"], key="batch_upload"
         )
-        b_text = st.text_area(
-            "…or paste multi-FASTA here",
-            height=150,
-            key="batch_text",
-            value=st.session_state.get("batch_example_fasta", ""),
+
+        # pre-fill from example button if set
+        prefill = st.session_state.get("_batch_fasta", "")
+        b_text  = st.text_area(
+            "…or paste multi-FASTA here", height=180,
+            value=prefill, key="batch_text"
         )
         b_struct = st.toggle(
             "Include structural search (≤400 aa only)", value=False, key="b_struct"
@@ -390,163 +346,132 @@ the protein is in the dark proteome, invisible to sequence methods.
                         tmp.write(raw)
                         tmp_path = tmp.name
                     job_id = batch_mgr.submit(
-                        tmp_path,
-                        evalue=evalue,
-                        iterations=iterations,
-                        use_structure=b_struct,
+                        tmp_path, evalue=evalue,
+                        iterations=iterations, use_structure=b_struct,
                     )
-                    st.success(
-                        f"Job **{job_id}** submitted — {len(seqs)} sequences. "
-                        "Refresh this page to track progress."
-                    )
-                    st.session_state.pop("batch_example_fasta", None)
-                    st.session_state.pop("batch_example_desc", None)
+                    st.success(f"Job **{job_id}** submitted — {len(seqs)} sequences.")
+                    st.session_state.pop("_batch_fasta", None)
+                    st.session_state.pop("_batch_desc", None)
 
+    # ── job list ──────────────────────────────────────────────────────────
     st.subheader("Jobs")
     jobs = batch_mgr.list_jobs()
-
     if not jobs:
         st.info("No batch jobs yet.")
     else:
         if st.button("🔄 Refresh"):
             st.rerun()
-
-        status_icon = {
-            "queued": "🕐", "running": "⏳",
-            "done":   "✅", "failed":  "❌", "cancelled": "🚫",
-        }
+        status_icon = {"queued":"🕐","running":"⏳","done":"✅","failed":"❌","cancelled":"🚫"}
         for job in jobs:
-            s = job.get("status", "unknown")
+            s = job.get("status","unknown")
             with st.container(border=True):
-                c1, c2, c3 = st.columns([3, 2, 2])
+                c1, c2, c3 = st.columns([3,2,2])
                 c1.markdown(f"{status_icon.get(s,'❓')} **{job['job_id']}** — `{s}`")
-                total    = job.get("total", 0)
-                progress = job.get("progress", 0)
-                c2.caption(
-                    f"{progress}/{total} sequences" if total
-                    else job.get("submitted", "")[:19]
-                )
+                total = job.get("total",0); prog = job.get("progress",0)
+                c2.caption(f"{prog}/{total} sequences" if total else job.get("submitted","")[:19])
                 if s == "done":
                     df_res = batch_mgr.results(job["job_id"])
                     if not df_res.empty:
-                        c3.download_button(
-                            "⬇ TSV",
-                            df_res.to_csv(sep="\t", index=False),
+                        c3.download_button("⬇ TSV",
+                            df_res.to_csv(sep="\t",index=False),
                             file_name=f"AnDOM_batch_{job['job_id']}.tsv",
                             mime="text/tab-separated-values",
-                            key=f"dl_{job['job_id']}",
-                        )
-                elif s in ("queued", "running"):
+                            key=f"dl_{job['job_id']}")
+                elif s in ("queued","running"):
                     if c3.button("Cancel", key=f"cancel_{job['job_id']}"):
-                        batch_mgr.cancel(job["job_id"])
-                        st.rerun()
+                        batch_mgr.cancel(job["job_id"]); st.rerun()
                 if job.get("error"):
                     st.error(job["error"])
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TAB 2 — Benchmark
+# TAB 2 — Benchmark (background thread, non-blocking)
 # ══════════════════════════════════════════════════════════════════════════════
 with page[2]:
     st.title("Benchmark — Sequence vs Structure vs Ensemble")
-
-    st.markdown("""
-**What this benchmark measures and why it matters for the paper:**
-
-The central claim of AnDOM 2.0 is that combining sequence search (MMseqs2 → SCOPe) 
-with structural search (ESMFold → Foldseek → CATH) recovers more domain annotations 
-than either method alone — especially for proteins that are hard for the community:
-
-- **Dark proteome** proteins with no sequence homologs
-- **Fast-evolving** viral/phage proteins below the twilight zone (~20% identity)  
-- **Intrinsically disordered** proteins with transient structured regions
-- **De novo designed** proteins with no evolutionary signal
-
-The benchmark runs all three arms on a curated set and reports:
-- **Rank-1 accuracy** — did the top hit match the known classification?
-- **Top-5 sensitivity** — was the correct answer anywhere in the top 5?
-- **Unique to structure** — how many proteins did the structural arm recover that sequence search missed?
-
-This directly answers: *does the ensemble deserve to exist alongside AlphaFold + Foldseek?*
-    """)
-
+    st.markdown(
+        "Compares all three arms on **SCOPE-40** (domains clustered at 40% sequence identity — "
+        "diverse enough that sequence methods alone struggle). Reports rank-1 accuracy and "
+        "top-5 sensitivity. This is the evidence for the paper claim: "
+        "*the ensemble recovers domains that neither arm finds alone.*"
+    )
     st.divider()
 
     bm_scope = st.toggle("Use built-in SCOPE-40 dataset", value=True)
-
     if bm_scope:
-        from config import SCOPE_FA
         bm_fasta = SCOPE_FA
         st.caption(f"Dataset: `{bm_fasta}`")
-        st.caption(
-            "SCOPE-40 = SCOPe domains clustered at 40% sequence identity. "
-            "This is the standard benchmark for domain annotation tools — "
-            "sequences are diverse enough that sequence methods alone struggle."
-        )
     else:
-        bm_file = st.file_uploader(
-            "Upload SCOPE-style FASTA (header: >domain_id class_code ...)",
-            type=["fa","fasta"], key="bm_upload"
-        )
+        bm_file = st.file_uploader("Upload SCOPE-style FASTA", type=["fa","fasta"], key="bm_upload")
         bm_fasta = None
         if bm_file:
             import tempfile
-            with tempfile.NamedTemporaryFile(
-                mode="wb", suffix=".fa", delete=False
-            ) as tmp:
-                tmp.write(bm_file.read())
-                bm_fasta = tmp.name
+            with tempfile.NamedTemporaryFile(mode="wb", suffix=".fa", delete=False) as tmp:
+                tmp.write(bm_file.read()); bm_fasta = tmp.name
 
-    bm_limit = st.number_input(
-        "Limit to first N sequences (0 = all; start with 50–100 to test)",
-        min_value=0, value=100, step=10
-    )
+    bm_limit = st.number_input("Limit to first N sequences (0 = all)", min_value=0, value=50, step=10)
 
-    if st.button("▶ Run Benchmark", type="primary"):
+    # results stored in session state so they survive reruns
+    if "bm_result" not in st.session_state:
+        st.session_state["bm_result"] = None
+    if "bm_running" not in st.session_state:
+        st.session_state["bm_running"] = False
+    if "bm_error" not in st.session_state:
+        st.session_state["bm_error"] = None
+
+    def _run_benchmark_thread(fasta_path, ev, iters, limit):
+        """Runs in background thread, stores result in session state."""
+        try:
+            from benchmark.run import run_arms_benchmark
+            ts = time.strftime("%Y%m%d_%H%M%S")
+            stats = run_arms_benchmark(
+                fasta_path, evalue=ev, iterations=iters,
+                limit=int(limit) if limit > 0 else None,
+                out_json=f"output/results/benchmark_{ts}.json",
+            )
+            st.session_state["bm_result"]  = stats
+            st.session_state["bm_error"]   = None
+        except Exception as exc:
+            st.session_state["bm_error"]   = str(exc)
+        finally:
+            st.session_state["bm_running"] = False
+
+    if st.button("▶ Run Benchmark", type="primary", disabled=st.session_state["bm_running"]):
         if not bm_fasta:
             st.warning("Please provide a FASTA file.")
         else:
-            from benchmark.run import run_arms_benchmark
-            import time as _time, json as _json
-            ts = _time.strftime("%Y%m%d_%H%M%S")
-            out_json = f"output/results/benchmark_{ts}.json"
-
-            with st.spinner("Running benchmark — this may take several minutes…"):
-                stats = run_arms_benchmark(
-                    bm_fasta,
-                    evalue=evalue,
-                    iterations=iterations,
-                    limit=int(bm_limit) if bm_limit > 0 else None,
-                    out_json=out_json,
-                )
-
-            st.success(f"Done — {stats['total']} sequences in {stats['elapsed_s']}s")
-
-            rows = []
-            for arm in ("seq_only", "struct_only", "ensemble"):
-                d = stats[arm]
-                rows.append({
-                    "Arm":      arm,
-                    "Rank-1 %": d["rank1_pct"],
-                    "Top-5 %":  d["top5_pct"],
-                    "Rank-1 n": d["rank1"],
-                    "Top-5 n":  d["top5"],
-                })
-            df_bm = pd.DataFrame(rows)
-            st.dataframe(df_bm, width="stretch", hide_index=True)
-            st.bar_chart(df_bm.set_index("Arm")[["Rank-1 %","Top-5 %"]])
-
-            st.caption(
-                "If ensemble > seq_only AND ensemble > struct_only → "
-                "the combination is justified. "
-                "If struct_only finds hits seq_only misses → dark proteome recovery confirmed."
+            st.session_state["bm_running"] = True
+            st.session_state["bm_result"]  = None
+            st.session_state["bm_error"]   = None
+            t = threading.Thread(
+                target=_run_benchmark_thread,
+                args=(bm_fasta, evalue, iterations, bm_limit),
+                daemon=True,
             )
+            t.start()
 
-            st.download_button(
-                "⬇ Download benchmark JSON",
-                data=_json.dumps(stats, indent=2),
-                file_name=f"benchmark_{ts}.json",
-                mime="application/json",
-            )
+    if st.session_state["bm_running"]:
+        st.info("⏳ Benchmark running in background — come back to this tab in a few minutes and refresh.")
+
+    if st.session_state["bm_error"]:
+        st.error(f"Benchmark failed: {st.session_state['bm_error']}")
+
+    stats = st.session_state["bm_result"]
+    if stats:
+        st.success(f"Done — {stats['total']} sequences in {stats.get('elapsed_s','?')}s")
+        rows = []
+        for arm in ("seq_only","struct_only","ensemble"):
+            d = stats[arm]
+            rows.append({"Arm":arm,"Rank-1 %":d["rank1_pct"],"Top-5 %":d["top5_pct"],
+                          "Rank-1 n":d["rank1"],"Top-5 n":d["top5"]})
+        df_bm = pd.DataFrame(rows)
+        st.dataframe(df_bm, use_container_width=True, hide_index=True)
+        st.bar_chart(df_bm.set_index("Arm")[["Rank-1 %","Top-5 %"]])
+        st.caption(
+            "ensemble > seq_only AND ensemble > struct_only → combination justified. "
+            "struct_only > 0 → dark proteome recovery confirmed."
+        )
+        st.download_button("⬇ Download JSON", data=json.dumps(stats,indent=2),
+            file_name="benchmark.json", mime="application/json")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 3 — Methods
@@ -561,18 +486,18 @@ with page[3]:
 
     st.subheader("Pipeline comparison: AnDOM 2002 vs AnDOM 2.0")
 
-    # look in docs/ first, then project root as fallback
-    svg_path = Path(__file__).parent / "docs" / "AnDOM_old_vs_new_method.svg"
-    if not svg_path.exists():
-        svg_path = Path(__file__).parent / "AnDOM_old_vs_new_method.svg"
-
-    if svg_path.exists():
-        st.markdown(svg_path.read_text(), unsafe_allow_html=True)
+    # try both locations
+    for candidate in [
+        Path(__file__).parent / "docs" / "AnDOM_old_vs_new_method.svg",
+        Path(__file__).parent / "AnDOM_old_vs_new_method.svg",
+        Path("/app/docs/AnDOM_old_vs_new_method.svg"),
+    ]:
+        if candidate.exists():
+            svg_text = candidate.read_text()
+            st.markdown(svg_text, unsafe_allow_html=True)
+            break
     else:
-        st.warning(
-            f"SVG not found. Copy the file to `docs/AnDOM_old_vs_new_method.svg` "
-            f"inside the project directory."
-        )
+        st.warning("SVG diagram not found. Expected at `docs/AnDOM_old_vs_new_method.svg`.")
 
     st.subheader("What is new in AnDOM 2.0")
     c1, c2 = st.columns(2)
@@ -597,12 +522,13 @@ with page[3]:
 - lDDT confidence per hit
 - Recovers domains invisible to sequence methods
 
-**Ensemble output**
-- Rank-fused table: sequence × structure combined score
-- 🟢 both arms · 🔵 seq only · 🟠 struct only (dark proteome)
-- Two-row domain architecture map with hover tooltips
-- Batch processing up to 500 sequences
-- Benchmark: rank-1 / top-5 comparison across all arms
+**Ensemble fusion (new)**
+- Matched by 4-char PDB code across both arms
+- 🟢 both arms = high-confidence annotation
+- 🟠 struct_only = dark proteome recovery
+- Rank-fused score: 40% seq + 60% struct
+- Batch up to 500 sequences, background jobs
+- Benchmark: rank-1 / top-5 per arm on SCOPE-40
         """)
 
     st.subheader("References")
