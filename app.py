@@ -3,11 +3,6 @@ AnDOM 2.0 — Streamlit web application.
 
 This file is intentionally thin: UI layout and user interaction only.
 All domain search logic lives in search/, db/, and batch/ modules.
-
-To add a new search method:
-    1. Create search/your_method.py with a run() function
-    2. Call it here alongside sequence.run() and structure.run()
-    3. Add its results to ensemble.domain_bar_html()
 """
 import sys
 import os
@@ -37,6 +32,100 @@ def get_batch_manager() -> BatchManager:
 
 batch_mgr = get_batch_manager()
 
+# ── hard benchmark sequences ──────────────────────────────────────────────────
+BATCH_EXAMPLES = {
+    "dark_proteome": {
+        "label": "Dark proteome (ORFan genes, no homologs)",
+        "desc": (
+            "Proteins with zero or near-zero sequence homologs in any database. "
+            "InterPro/Pfam find nothing. AlphaFold can predict a structure but cannot "
+            "classify the domain. This is where the structural arm of AnDOM 2.0 adds value."
+        ),
+        "fasta": """>UP000005640_ORFan_1
+MSSRSSRGRGGRSSRGRSSRGRGGRSSRGRSSRGRGGRSSRGRSSRGRGGR
+>UP000005640_ORFan_2
+MASNDYTQQATQSYGAYPTQPGQGYSQQSSQPYGQQSYSGYSQSTDTSGYGQSSYSSYGQ
+>Mycobacterium_PE_PGRS_1
+MAPEPAAPAPAPAPAPAPAPAPAPAPAPAPAPAPAPAPAPAPAPAPAPAPAPAPAPAPAP
+APAPAPAPAPAPAPAPAPAPAPAPAPAPAPAPAPAPAPAPAPAPAPAPAPAPAPAPAP
+""",
+    },
+    "fast_evolving": {
+        "label": "Fast-evolving viral/phage proteins",
+        "desc": (
+            "Viral and bacteriophage proteins evolve so fast that sequence methods "
+            "fail below ~20% identity — the 'twilight zone'. Structural search recovers "
+            "these when sequence search returns nothing. Critical for virology."
+        ),
+        "fasta": """>HIV1_Vif_HXB2
+MENRWQVMIVWQVDRMRIRTWKSLVKHHMYVSGKARGWFYRHHYESPHPRISSEVHIPL
+GDARLIITTYWGLHTGERDWHLGQGVSIEWRKKRYSTQVDPELAD
+>Lambda_phage_Cro
+MTKQKTLQELRQELQHEAHELYNALIQRLEQEVQAELANQEQQLHALEQLERERLLKLA
+>T4_phage_gp5_baseplate
+MNIFEMLRIDEGLRLKIYKDTEGYYTIGIGHLLTKSPSLNAAKSELDKAIGRNCNGVITK
+DEAEKLFNQDVDAAVRGILRNAKLKPVYDSLDAVRRAALINMVFQMGETGVAGFTNSLRM
+""",
+    },
+    "multidomain_hard": {
+        "label": "Multi-domain — one known, one novel",
+        "desc": (
+            "Proteins where one domain is well-characterised but a second "
+            "domain has no sequence homologs. Ensemble scoring flags the known "
+            "domain with high confidence (both arms) and the novel domain "
+            "as structure-only — exactly the complementarity we benchmark."
+        ),
+        "fasta": """>p53_full_with_disordered_TAD
+MEEPQSDPSVEPPLSQETFSDLWKLLPENNVLSPLPSQAMDDLMLSPDDIEQWFTEDPG
+PDEAPRMPEAAPPVAPAPAAPTPAAPAPAPSWPLSSSVPSQKTYPQGLNGTVNLFQSSHY
+SVVKQKDGQFEVTMDVTAPGTSVTIRNPRFQNLVTPQGRIKVSGNVPNLNAAVKRGDKK
+SVLHACIHSISQGGVSSEDGKKKKNLTQKAVNSTDLNIIDNLTENVKSNLQKLYNQLSK
+>Src_kinase_SH3_novel_insert
+MGSNKSKPKDASQRRRSLEPAENVHGAGGGAFPASQTPSKPASADGHRGPSAAFAPAAAE
+KVLFGGFNSSDTVTSPQRAGPLAGGVTTFVALYDYESRTETDLSFKKGERLQIVNNTEGD
+WWLAHSLSTGQTGYIPSNYVAPSDSIQAEEWYFGKITRRESERLLLNAENPRGTFLVRESE
+""",
+    },
+    "intrinsically_disordered": {
+        "label": "Intrinsically disordered proteins (IDPs)",
+        "desc": (
+            "IDPs have no stable fold but often contain short linear motifs (SLiMs) "
+            "and transient structured regions. AlphaFold gives low pLDDT scores. "
+            "InterPro misses the structured segments. The ensemble can recover "
+            "transiently folded domains via the structural arm."
+        ),
+        "fasta": """>FG_nucleoporin_Nup98
+MSNTGGFGFGSGFGSGFGSGFGSSFGSGFGSGFGSGFGSSFGSGFGSGFGSGFGSSFGS
+GFGSGFGSGFGSGFGSSFGSGFGSGFGSGFGSSFGSGFGSGFGSGFGSSFGSGFGSGFG
+>Tau_repeat_domain
+MAEPRQEFEVMEDHAGTYGLGDRKDQGGYTMHQDQEGDTDAGLKESPLQTPTEDGSEEP
+GSETSDAKSTPTAEDVTAPLVDEGAPGKQAAAQPHTEIPEGTTAEEAGIGDTPSLEDEAA
+GHVTQARMVSKSKDGTGSDDKKAKGADGKTKIATPRGAAPPGQKGQANATRIPAKTPPAP
+>Alpha_synuclein_Parkinsons
+MDVFMKGLSKAKEGVVAAAEKTKQGVAEAAGKTKEGVLYVGSKTKEGVVHGVATVAEKTK
+EQVTNVGGAVVTGVTAVAQKTVEGAGSIAAATGFVKKDQLGKNEEGAPQEGILEDMPVDP
+DNEAYEMPSEEGYQDYEPEA
+""",
+    },
+    "de_novo_designed": {
+        "label": "De novo designed proteins",
+        "desc": (
+            "Computationally designed proteins with no evolutionary history. "
+            "Zero sequence homologs by definition. AlphaFold can predict them "
+            "but cannot classify them. Only structural comparison to known folds "
+            "can reveal if they adopt a known topology. Pure structural arm test."
+        ),
+        "fasta": """>Designed_TIM_barrel_de_novo
+MAKMAEEILSQYGDNLPKEVLEYLEKNIAKSGKIFVEIKADNAIAAANAKAVLENAKEVL
+EAYKTGKVNLVEKFDANLDAAKAKAVLEAAKEVLEAYKTGKVNLVEAFDANLDAAKAKAV
+LEAAKEVLEAYKTGKVNLVEAFDANLDAAKAKAVLE
+>Designed_beta_propeller
+MSTGKVIKVLSANDQTGEVKITVHGKTVDVTVEEGDKVTLHYEGKAVDVSVEEGDKVTL
+HYEGKAVDVSVEEGDKVTLHYEGKAVDVSVEEGDKVTLHYEGKAVDVSVEE
+""",
+    },
+}
+
 # ── sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.header("Search Parameters")
@@ -63,7 +152,7 @@ with st.sidebar:
 page = st.tabs(["Search", "Batch", "Benchmark", "Methods"])
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TAB 0 — Search (unchanged)
+# TAB 0 — Search
 # ══════════════════════════════════════════════════════════════════════════════
 with page[0]:
     st.title("AnDOM 2.0 — Structural Domain Finder")
@@ -135,10 +224,15 @@ with page[0]:
 
             df_seq, df_str = add_scores(df_seq, df_str)
 
-            # ensemble fusion table (new)
+            # ensemble fusion table
             fused = fuse_results(df_seq, df_str)
             if not fused.empty:
                 st.subheader("Ensemble Ranked Hits")
+                st.caption(
+                    "🟢 found by both arms (high confidence) · "
+                    "🔵 sequence only · "
+                    "🟠 structure only (recovered by ESMFold+Foldseek)"
+                )
                 ev_icon = {"both": "🟢", "seq_only": "🔵", "struct_only": "🟠"}
                 fused["ev"] = fused["evidence"].map(ev_icon)
                 st.dataframe(
@@ -161,7 +255,7 @@ with page[0]:
             st.markdown(
                 '<p style="font-size:11px;color:#888">'
                 "Top: SCOPe sequence hits (coloured by SCOP class) &nbsp;|&nbsp; "
-                f"Bottom: CATH structural hits (dark) &nbsp;|&nbsp; "
+                "Bottom: CATH structural hits (dark) &nbsp;|&nbsp; "
                 f"Hover for details &nbsp;|&nbsp; 1 to {bar_len} aa</p>"
                 + domain_bar_html(df_seq, df_str, bar_len),
                 unsafe_allow_html=True,
@@ -227,12 +321,47 @@ with page[1]:
         "jobs run in the background"
     )
 
+    # ── why AnDOM 2.0 exists ───────────────────────────────────────────────
+    with st.expander("💡 What can AnDOM 2.0 find that AlphaFold + Foldseek alone cannot?", expanded=False):
+        st.markdown("""
+AnDOM 2.0 is not a replacement for AlphaFold or Foldseek — it fills the gap **after** structure prediction:
+
+| Challenge | AlphaFold | Foldseek | InterPro/Pfam | **AnDOM 2.0** |
+|---|---|---|---|---|
+| Predicts 3D structure | ✅ | needs structure | ❌ | via ESMFold |
+| Assigns domain to SCOP/CATH class | ❌ | ✅ if DB has it | sequence only | **✅ seq + struct** |
+| Dark proteome (no homologs) | structure only | ❌ no hit | ❌ | **structural arm recovers** |
+| Fast-evolving viral proteins | structure only | weak | ❌ | **ensemble boosts** |
+| Multi-domain: one known, one novel | ❌ | partial | partial | **flags both, evidence tagged** |
+| Intrinsically disordered + folded domain | pLDDT low | poor | misses | **structural arm** |
+| De novo designed proteins | structure only | ❌ | ❌ | **structural arm** |
+
+**The key insight:** AlphaFold gives you coordinates. AnDOM 2.0 tells you *what fold family those coordinates belong to*, 
+using two independent lines of evidence. When both agree → high confidence. When only structure finds it → 
+the protein is in the dark proteome, invisible to sequence methods.
+        """)
+
+    # ── batch examples ────────────────────────────────────────────────────
+    st.markdown("**Load a benchmark example set:**")
+    ex_cols = st.columns(len(BATCH_EXAMPLES))
+    for i, (key, ex) in enumerate(BATCH_EXAMPLES.items()):
+        if ex_cols[i].button(ex["label"], use_container_width=True, key=f"bex_{key}"):
+            st.session_state["batch_example_fasta"] = ex["fasta"]
+            st.session_state["batch_example_desc"]  = ex["desc"]
+            st.rerun()
+
+    if "batch_example_desc" in st.session_state:
+        st.info(st.session_state["batch_example_desc"])
+
     with st.expander("➕ Submit new batch job", expanded=True):
         b_upload = st.file_uploader(
             "Upload multi-FASTA", type=["fa","fasta","txt"], key="batch_upload"
         )
         b_text = st.text_area(
-            "…or paste multi-FASTA here", height=150, key="batch_text"
+            "…or paste multi-FASTA here",
+            height=150,
+            key="batch_text",
+            value=st.session_state.get("batch_example_fasta", ""),
         )
         b_struct = st.toggle(
             "Include structural search (≤400 aa only)", value=False, key="b_struct"
@@ -270,6 +399,8 @@ with page[1]:
                         f"Job **{job_id}** submitted — {len(seqs)} sequences. "
                         "Refresh this page to track progress."
                     )
+                    st.session_state.pop("batch_example_fasta", None)
+                    st.session_state.pop("batch_example_desc", None)
 
     st.subheader("Jobs")
     jobs = batch_mgr.list_jobs()
@@ -317,10 +448,28 @@ with page[1]:
 # ══════════════════════════════════════════════════════════════════════════════
 with page[2]:
     st.title("Benchmark — Sequence vs Structure vs Ensemble")
-    st.markdown(
-        "Evaluate all three search arms on the built-in SCOPE-40 dataset "
-        "or your own FASTA. Metrics: **Rank-1 accuracy** and **Top-5 sensitivity**."
-    )
+
+    st.markdown("""
+**What this benchmark measures and why it matters for the paper:**
+
+The central claim of AnDOM 2.0 is that combining sequence search (MMseqs2 → SCOPe) 
+with structural search (ESMFold → Foldseek → CATH) recovers more domain annotations 
+than either method alone — especially for proteins that are hard for the community:
+
+- **Dark proteome** proteins with no sequence homologs
+- **Fast-evolving** viral/phage proteins below the twilight zone (~20% identity)  
+- **Intrinsically disordered** proteins with transient structured regions
+- **De novo designed** proteins with no evolutionary signal
+
+The benchmark runs all three arms on a curated set and reports:
+- **Rank-1 accuracy** — did the top hit match the known classification?
+- **Top-5 sensitivity** — was the correct answer anywhere in the top 5?
+- **Unique to structure** — how many proteins did the structural arm recover that sequence search missed?
+
+This directly answers: *does the ensemble deserve to exist alongside AlphaFold + Foldseek?*
+    """)
+
+    st.divider()
 
     bm_scope = st.toggle("Use built-in SCOPE-40 dataset", value=True)
 
@@ -328,9 +477,15 @@ with page[2]:
         from config import SCOPE_FA
         bm_fasta = SCOPE_FA
         st.caption(f"Dataset: `{bm_fasta}`")
+        st.caption(
+            "SCOPE-40 = SCOPe domains clustered at 40% sequence identity. "
+            "This is the standard benchmark for domain annotation tools — "
+            "sequences are diverse enough that sequence methods alone struggle."
+        )
     else:
         bm_file = st.file_uploader(
-            "Upload SCOPE-style FASTA", type=["fa","fasta"], key="bm_upload"
+            "Upload SCOPE-style FASTA (header: >domain_id class_code ...)",
+            type=["fa","fasta"], key="bm_upload"
         )
         bm_fasta = None
         if bm_file:
@@ -342,7 +497,8 @@ with page[2]:
                 bm_fasta = tmp.name
 
     bm_limit = st.number_input(
-        "Limit to first N sequences (0 = all)", min_value=0, value=100, step=10
+        "Limit to first N sequences (0 = all; start with 50–100 to test)",
+        min_value=0, value=100, step=10
     )
 
     if st.button("▶ Run Benchmark", type="primary"):
@@ -379,6 +535,12 @@ with page[2]:
             st.dataframe(df_bm, use_container_width=True, hide_index=True)
             st.bar_chart(df_bm.set_index("Arm")[["Rank-1 %","Top-5 %"]])
 
+            st.caption(
+                "If ensemble > seq_only AND ensemble > struct_only → "
+                "the combination is justified. "
+                "If struct_only finds hits seq_only misses → dark proteome recovery confirmed."
+            )
+
             st.download_button(
                 "⬇ Download benchmark JSON",
                 data=_json.dumps(stats, indent=2),
@@ -387,7 +549,7 @@ with page[2]:
             )
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TAB 3 — Methods (unchanged)
+# TAB 3 — Methods
 # ══════════════════════════════════════════════════════════════════════════════
 with page[3]:
     st.title("Methods — AnDOM 2.0")
@@ -398,9 +560,19 @@ with page[3]:
     )
 
     st.subheader("Pipeline comparison: AnDOM 2002 vs AnDOM 2.0")
+
+    # look in docs/ first, then project root as fallback
     svg_path = Path(__file__).parent / "docs" / "AnDOM_old_vs_new_method.svg"
+    if not svg_path.exists():
+        svg_path = Path(__file__).parent / "AnDOM_old_vs_new_method.svg"
+
     if svg_path.exists():
         st.markdown(svg_path.read_text(), unsafe_allow_html=True)
+    else:
+        st.warning(
+            f"SVG not found. Copy the file to `docs/AnDOM_old_vs_new_method.svg` "
+            f"inside the project directory."
+        )
 
     st.subheader("What is new in AnDOM 2.0")
     c1, c2 = st.columns(2)
@@ -427,9 +599,9 @@ with page[3]:
 
 **Ensemble output**
 - Rank-fused table: sequence × structure combined score
+- 🟢 both arms · 🔵 seq only · 🟠 struct only (dark proteome)
 - Two-row domain architecture map with hover tooltips
-- 🟢 both arms · 🔵 seq only · 🟠 struct only
-- Batch processing for proteome-scale runs
+- Batch processing up to 500 sequences
 - Benchmark: rank-1 / top-5 comparison across all arms
         """)
 
