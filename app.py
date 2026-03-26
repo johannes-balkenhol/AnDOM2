@@ -7,6 +7,7 @@ import json
 import time
 import threading
 import streamlit as st
+import uuid as _uuid
 import pandas as pd
 from pathlib import Path
 
@@ -165,7 +166,8 @@ with page[0]:
 
             with col_seq:
                 with st.spinner("Sequence search — SCOPe 2.08..."):
-                    df_seq, err = seq_search.run(fasta, evalue=evalue, iterations=iterations)
+                    import uuid as _uuid; _tid = _uuid.uuid4().hex[:8]
+                    df_seq, err = seq_search.run(fasta, evalue=evalue, iterations=iterations, tmp_dir=f"/output/tmp/{_tid}")
                 if err:
                     st.error(f"Sequence search failed: {err}")
                 elif df_seq is None or len(df_seq) == 0:
@@ -493,7 +495,7 @@ with page[3]:
     ]:
         if candidate.exists():
             svg_text = candidate.read_text()
-            st.markdown(svg_text, unsafe_allow_html=True)
+            st.image(str(candidate))
             break
     else:
         st.warning("SVG diagram not found. Expected at `docs/AnDOM_old_vs_new_method.svg`.")
