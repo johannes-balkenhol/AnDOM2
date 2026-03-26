@@ -6,11 +6,15 @@ Import this module from anywhere in the project.
 from pathlib import Path
 
 # ── project root & key directories ────────────────────────────────────────────
+import os
 ROOT_DIR   = Path(__file__).parent
+# allow Docker to override data/output paths via environment variables
+_DATA_OVERRIDE   = os.environ.get("ANDOM_DATA_DIR")
+_OUTPUT_OVERRIDE = os.environ.get("ANDOM_OUTPUT_DIR")
 SRC_DIR    = ROOT_DIR / "src"
-DATA_DIR   = ROOT_DIR / "data"
+DATA_DIR   = Path(_DATA_OVERRIDE) if _DATA_OVERRIDE else ROOT_DIR / "data"
 DOCS_DIR   = ROOT_DIR / "docs"
-OUTPUT_DIR = ROOT_DIR / "output"
+OUTPUT_DIR = Path(_OUTPUT_OVERRIDE) if _OUTPUT_OVERRIDE else ROOT_DIR / "output"
 TMP_DIR    = str(OUTPUT_DIR / "tmp")
 
 # ── external tool paths ───────────────────────────────────────────────────────
