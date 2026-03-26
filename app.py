@@ -314,7 +314,6 @@ with page[1]:
         )
 
         # pre-fill from example button if set
-        prefill = st.session_state.get("_batch_fasta", "")
         b_text  = st.text_area(
             "…or paste multi-FASTA here", height=180,
             key="batch_text"
