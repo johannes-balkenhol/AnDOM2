@@ -29,6 +29,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from config import SCOP_COLORS
+from db.lookup import get_cath_code
 import db.lookup as lookup
 
 
@@ -200,6 +201,7 @@ def fuse_results(
         for _, r in df_seq.iterrows():
             seq_hits.append({
                 "domain": str(r["target"]),
+                "cath_code": get_cath_code(str(r["target"])),
                 "sccs":   lk.get(str(r["target"]), {}).get("sccs", "—"),
                 "evalue": float(r["evalue"]),
                 "qstart": int(r.get("qstart", 0)),
@@ -211,6 +213,7 @@ def fuse_results(
         for _, r in df_str.iterrows():
             struct_hits.append({
                 "domain": str(r["target"]),
+                "cath_code": get_cath_code(str(r["target"])),
                 "evalue": float(r["evalue"]),
                 "lddt":   float(r.get("lddt", 0)),
                 "qstart": int(r.get("qstart", 0)),
@@ -404,19 +407,21 @@ def benchmark_arms(
     seq_idx    = {r["seq_id"]: r["hits"] for r in seq_results}
     struct_idx = {r["seq_id"]: r["hits"] for r in struct_results}
 
-    for seq_id, true_domain in ground_truth.items():
+    for seq_id, true_sccs in ground_truth.items():
         sh = seq_idx.get(seq_id, [])
         th = struct_idx.get(seq_id, [])
 
-        seq_ids = [h.get("target", "") for h in sh]
+        # Compare by sccs (fold family) not domain ID
+        # e.g. true_sccs="a.1.1.1", hit sccs also "a.1.1.1" = correct
+        seq_sccs = [lk.get(h.get("target",""), {}).get("sccs","") for h in sh]
 
-        def _check_seq(ids: list[str], arm: str) -> None:
-            if ids and ids[0] == true_domain:
+        def _check_seq(sccs_list: list[str], arm: str) -> None:
+            if sccs_list and sccs_list[0] == true_sccs:
                 stats[arm]["rank1"] += 1
-            if true_domain in ids[:5]:
+            if true_sccs in sccs_list[:5]:
                 stats[arm]["top5"] += 1
 
-        _check_seq(seq_ids, "seq_only")
+        _check_seq(seq_sccs, "seq_only")
 
         # struct arm: check by sccs class match via SCOPe lookup
         lk = lookup.all_domains()
@@ -439,12 +444,14 @@ def benchmark_arms(
 
         df_s = pd.DataFrame(sh) if sh else None
         df_t = pd.DataFrame(th) if th else None
+        df_s = pd.DataFrame(sh) if sh else None
+        df_t = pd.DataFrame(th) if th else None
         fused = fuse_results(df_s, df_t)
         if not fused.empty:
-            top = fused.iloc[0]
-            if top["scope_domain"] == true_domain:
+            fused_sccs = [lk.get(d, {}).get("sccs","") for d in fused["scope_domain"].tolist()]
+            if fused_sccs and fused_sccs[0] == true_sccs:
                 stats["ensemble"]["rank1"] += 1
-            if true_domain in fused["scope_domain"].tolist()[:5]:
+            if true_sccs in fused_sccs[:5]:
                 stats["ensemble"]["top5"] += 1
 
     total = max(stats["total"], 1)
