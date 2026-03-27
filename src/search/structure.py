@@ -44,7 +44,7 @@ def predict_structure(sequence: str, tmp_dir: Path | None = None) -> tuple:
         if not r.text.startswith("HEADER"):
             return None, f"ESMFold API error: {r.text[:300]}"
 
-        out_dir  = tmp_dir or Path(TMP_DIR)
+        out_dir  = Path(tmp_dir) if tmp_dir else Path(TMP_DIR)
         out_dir.mkdir(parents=True, exist_ok=True)
         pdb_path = out_dir / "query_struct.pdb"
         pdb_path.write_text(r.text)
@@ -79,7 +79,7 @@ def search_cath(
     (None, error_str)  on failure
     (None, None)       if no hits
     """
-    out_dir  = tmp_dir or Path(TMP_DIR)
+    out_dir  = Path(tmp_dir) if tmp_dir else Path(TMP_DIR)
     out_dir.mkdir(parents=True, exist_ok=True)
     out_tsv  = out_dir / "struct_results.tsv"
     fs_tmp   = out_dir / "foldseek_tmp"
