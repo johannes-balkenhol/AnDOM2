@@ -407,12 +407,12 @@ def benchmark_arms(
     seq_idx    = {r["seq_id"]: r["hits"] for r in seq_results}
     struct_idx = {r["seq_id"]: r["hits"] for r in struct_results}
 
+    lk = lookup.all_domains()
     for seq_id, true_sccs in ground_truth.items():
         sh = seq_idx.get(seq_id, [])
         th = struct_idx.get(seq_id, [])
 
         # Compare by sccs (fold family) not domain ID
-        # e.g. true_sccs="a.1.1.1", hit sccs also "a.1.1.1" = correct
         seq_sccs = [lk.get(h.get("target",""), {}).get("sccs","") for h in sh]
 
         def _check_seq(sccs_list: list[str], arm: str) -> None:
