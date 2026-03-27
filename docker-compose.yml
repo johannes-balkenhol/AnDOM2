@@ -1,4 +1,3 @@
-
 services:
   andom:
     build: .
@@ -7,9 +6,14 @@ services:
     ports:
       - "8501:8501"
     volumes:
-      # databases — mount your data/ folder here
+      # Code — mounted live so changes only need docker compose restart
+      - ./app.py:/app/app.py:ro
+      - ./config.py:/app/config.py:ro
+      - ./src:/app/src:ro
+      - ./docs:/app/docs:ro
+      # Data — large, downloaded separately, never baked into image
       - ./data:/data:ro
-      # runtime output — writable
+      # Output — writable, persists across restarts
       - ./output:/output
     environment:
       - ANDOM_DATA_DIR=/data
@@ -19,4 +23,3 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 30s

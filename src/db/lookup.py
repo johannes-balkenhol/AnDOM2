@@ -107,3 +107,19 @@ def cath_pdb_url(target: str) -> str:
         return f"https://www.rcsb.org/structure/{target[:4].lower()}"
     except Exception:
         return "https://www.cathdb.info"
+
+def cath_code_to_scop_class(cath_code: str) -> str:
+    """
+    Map CATH classification code to approximate SCOPe class letter.
+    Uses CATH class number (first digit of code):
+      1 = mainly alpha    → a
+      2 = mainly beta     → b
+      3 = alpha/beta      → c  (mixed; SCOP separates c=barrel, d=orthogonal)
+      4 = few secondary   → g  (small proteins)
+    Returns '' if mapping not possible.
+    """
+    try:
+        cath_class = cath_code.split(".")[0]
+        return {"1": "a", "2": "b", "3": "c", "4": "g"}.get(cath_class, "")
+    except Exception:
+        return ""

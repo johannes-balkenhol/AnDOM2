@@ -423,7 +423,16 @@ def benchmark_arms(
 
         _check_seq(seq_sccs, "seq_only")
 
-        # struct arm: region overlap with best seq hit as proxy
+        # struct arm: predict scop class from CATH code
+        from db.lookup import get_cath_code, cath_code_to_scop_class
+        struct_classes = [cath_code_to_scop_class(get_cath_code(h.get("target",""))) for h in th]
+        true_class = true_sccs[0] if true_sccs else ""
+        def _check_struct(classes, arm):
+            if classes and classes[0] == true_class:
+                stats[arm]["rank1"] += 1
+            if true_class in classes[:5]:
+                stats[arm]["top5"] += 1
+        _check_struct(struct_classes, "struct_only")
         if sh and th:
             true_hit = sh[0]  # best seq hit as reference
             for j, t in enumerate(th[:5]):
