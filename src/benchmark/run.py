@@ -231,13 +231,14 @@ def run_arms_benchmark(
         print(f"  [{i}/{len(seqs)}] {seq_id}", end="  ")
 
         fasta = f">{seq_id}\n{seq}"
-        sh, err = seq_search.run(fasta, evalue=evalue, iterations=iterations)
+        import uuid as _uuid; _tid=_uuid.uuid4().hex[:8]
+            sh, err = seq_search.run(fasta, evalue=evalue, iterations=iterations, tmp_dir=f"/output/tmp/bench_{_tid}")
         seq_hits = sh.to_dict("records") if sh is not None and len(sh) > 0 else []
         seq_results.append({"seq_id": seq_id, "hits": seq_hits})
         print(f"seq:{len(seq_hits)}", end="  ")
 
         if len(seq) <= 400:
-            th, err2 = str_search.run(seq)
+            th, err2 = str_search.run(seq, tmp_dir=f"/output/tmp/bench_{_tid}_str")
             struct_hits = th.to_dict("records") if th is not None and len(th) > 0 else []
         else:
             struct_hits = []
