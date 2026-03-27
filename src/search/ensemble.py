@@ -423,12 +423,7 @@ def benchmark_arms(
 
         _check_seq(seq_sccs, "seq_only")
 
-        # struct arm: check by sccs class match via SCOPe lookup
-        lk = lookup.all_domains()
-        true_sccs = lk.get(true_domain, {}).get("sccs", "")
-        # struct hits don't have sccs directly — count as hit if region overlaps
-        # and we later add CATH↔SCOP concordance
-        # For now: struct rank-1 is based on best lddt struct hit region overlap with true seq hit
+        # struct arm: region overlap with best seq hit as proxy
         if sh and th:
             true_hit = sh[0]  # best seq hit as reference
             for j, t in enumerate(th[:5]):
