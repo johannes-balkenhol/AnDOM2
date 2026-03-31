@@ -211,12 +211,14 @@ with page[0]:
                 c2.metric("🔵 Seq only",  n_seq)
                 c3.metric("🟠 Struct only (dark proteome)", n_struct)
 
+                from db.lookup import get_cath_code
+                fused["cath_code"] = fused["cath_domain"].apply(get_cath_code)
                 st.dataframe(
-                    fused[["rank","ev","scope_domain","sccs","cath_domain",
+                    fused[["rank","ev","scope_domain","sccs","cath_domain","cath_code",
                            "evidence","ensemble_score","seq_evalue","struct_evalue","lddt"]].rename(
                         columns={"ev": "",
                                  "scope_domain": "SCOPe domain", "sccs": "SCOP class",
-                                 "cath_domain": "CATH domain",
+                                 "cath_domain": "CATH domain", "cath_code": "CATH code",
                                  "ensemble_score": "Score",
                                  "seq_evalue": "Seq e-val",
                                  "struct_evalue": "Struct e-val"}),
