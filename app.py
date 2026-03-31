@@ -303,7 +303,7 @@ with page[1]:
     ex_cols = st.columns(len(BATCH_EXAMPLES))
     for i, (key, ex) in enumerate(BATCH_EXAMPLES.items()):
         if ex_cols[i].button(ex["label"], use_container_width=True, key=f"bex_{key}"):
-            st.session_state["_batch_fasta"] = ex["fasta"]
+            st.session_state["batch_text"] = ex["fasta"]
             st.session_state["_batch_desc"]  = ex["desc"]
 
     if "_batch_desc" in st.session_state:
