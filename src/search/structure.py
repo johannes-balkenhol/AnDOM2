@@ -26,7 +26,7 @@ def predict_structure(sequence: str, tmp_dir: Path | None = None) -> tuple:
     """
     clean = "".join(
         l.strip() for l in sequence.splitlines() if not l.startswith(">")
-    ).replace(" ", "")
+    ).replace(" ", "").upper()
 
     if len(clean) > ESMFOLD_MAXLEN:
         return None, (
