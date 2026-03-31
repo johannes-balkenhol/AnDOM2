@@ -85,7 +85,21 @@ def get_cath_code(domain_id: str) -> str:
     Domain ID is lowercased for lookup.
     Returns '' if not found.
     """
-    return _load_cath().get(domain_id.lower(), "")
+    # Try direct lookup first
+    result = _load_cath().get(domain_id.lower(), "")
+    if result:
+        return result
+    # AlphaFold entries embed CATH code in name: af_P9WN25_1_136_1.10.490.10
+    if domain_id.startswith("af_"):
+        parts = domain_id.split("_")
+        for part in reversed(parts):
+            if part.count(".") == 3:
+                try:
+                    [int(x) for x in part.split(".")]
+                    return part
+                except ValueError:
+                    pass
+    return ""
 
 
 def load_cath_codes() -> dict:
