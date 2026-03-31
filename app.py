@@ -47,6 +47,7 @@ BATCH_EXAMPLES = {
             "MAEPRQEFEVMEDHAGTYGLGDRKDQGGYTMHQDQEGDTDAGLKESPLQTPTEDGSEEPGSETSDAKSTPT\n"
         ),
         "desc": "Proteins with no/few sequence homologs — InterPro finds nothing, structural arm recovers domain class.",
+        "use_structure": True,
     },
     "viral_phage": {
         "label": "Viral / phage proteins",
@@ -307,6 +308,8 @@ with page[1]:
         if ex_cols[i].button(ex["label"], use_container_width=True, key=f"bex_{key}"):
             st.session_state["batch_text"] = ex["fasta"]
             st.session_state["_batch_desc"]  = ex["desc"]
+            if ex.get("use_structure", False):
+                st.session_state["b_struct"] = True
 
     if "_batch_desc" in st.session_state:
         st.info(st.session_state["_batch_desc"])
@@ -380,8 +383,17 @@ with page[1]:
                             file_name=f"AnDOM_batch_{job['job_id']}.tsv",
                             mime="text/tab-separated-values",
                             key=f"dl_{job['job_id']}")
-                        with st.expander(f"📊 View results — {len(df_res)} hits"):
-                            st.dataframe(df_res, use_container_width=True, hide_index=True)
+                        if len(df_res) == 0:
+                            st.warning("No domain hits found — try enabling structural search for dark proteome proteins.")
+                        else:
+                            if len(df_res) == 0:
+                            st.warning("No domain hits found — try enabling structural search for dark proteome proteins.")
+                        else:
+                            if df_res.empty:
+                            st.warning("No hits found — enable 'Include structural search' for dark proteome proteins.")
+                        else:
+                            with st.expander(f"📊 View results — {len(df_res)} hits"):
+                                st.dataframe(df_res, use_container_width=True, hide_index=True)
                 elif s in ("queued","running"):
                     if c3.button("Cancel", key=f"cancel_{job['job_id']}"):
                         batch_mgr.cancel(job["job_id"]); st.rerun()
