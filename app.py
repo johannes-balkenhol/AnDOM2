@@ -380,6 +380,8 @@ with page[1]:
                             file_name=f"AnDOM_batch_{job['job_id']}.tsv",
                             mime="text/tab-separated-values",
                             key=f"dl_{job['job_id']}")
+                        with st.expander(f"📊 View results — {len(df_res)} hits"):
+                            st.dataframe(df_res, use_container_width=True, hide_index=True)
                 elif s in ("queued","running"):
                     if c3.button("Cancel", key=f"cancel_{job['job_id']}"):
                         batch_mgr.cancel(job["job_id"]); st.rerun()
