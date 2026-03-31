@@ -29,7 +29,7 @@ st.set_page_config(page_title="AnDOM 2.0", layout="wide")
 # ── singletons ────────────────────────────────────────────────────────────────
 @st.cache_resource
 def get_batch_manager() -> BatchManager:
-    return BatchManager(output_root="output")
+    return BatchManager(output_root=os.environ.get("ANDOM_OUTPUT_DIR", "output"))
 
 batch_mgr = get_batch_manager()
 
