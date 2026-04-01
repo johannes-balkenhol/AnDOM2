@@ -12,7 +12,7 @@ services:
       - ./src:/app/src:ro
       - ./docs:/app/docs:ro
       # Data — large, downloaded separately, never baked into image
-      - ./data:/data:ro
+      - ./data:/data
       # Output — writable, persists across restarts
       - ./output:/output
     environment:
