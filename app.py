@@ -388,8 +388,9 @@ with page[1]:
                         else:
                             with st.expander(f"📊 View results — {len(df_res)} hits"):
                                 st.dataframe(df_res, use_container_width=True, hide_index=True)
-                    if c3.button("Cancel", key=f"cancel_{job['job_id']}"):
-                        batch_mgr.cancel(job["job_id"]); st.rerun()
+                    if s in ("queued","running"):
+                        if c3.button("Cancel", key="cancel_"+job["job_id"]):
+                            batch_mgr.cancel(job["job_id"]); st.rerun()
                 if job.get("error"):
                     st.error(job["error"])
 
