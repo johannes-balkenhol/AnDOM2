@@ -51,13 +51,13 @@ BATCH_EXAMPLES = {
     "viral_phage": {
         "label": "Viral / phage proteins",
         "fasta": (
-            ">HIV1_Vif_HXB2\n"
-            "MENRWQVMIVWQVDRMRIRTWKSLVKHHMYVSGKARGWFYRHHYESPHPRISSEVHIPLGDARLII\n"
-            "TTYWGLHTGERDWHLGQGVSIEWRKKRYSTQVDPELAD\n"
-            ">Lambda_phage_Cro\n"
-            "MTKQKTLQELRQELQHEAHELYNALIQRLEQEVQAELANQEQQLHALEQLERERLLKLA\n"
+            ">SARS-CoV-2_nsp7\n"
+            "MSKMVLSGGFGAGVQFMNLAKSTGPVVAAAVNGLMNLFGQKSPKTVNLNKDYIQRDTGEALNKILQDYINGVAPKALENRQLAGLRQLQEQR\n"
+            ">SARS-CoV-2_nsp8\n"
+            "MIAGGHYVFKEIVMKDPEKFNEALKMLPIDGETVIAEQIAGLKNTLKYLRKLEKDLALKLNHITNDMSSEMAKQYKEYVNKVLPQLENFEDLTKLK\n"
         ),
-        "desc": "Fast-evolving viral proteins below the twilight zone (~20% identity). Sequence methods fail, structural arm recovers.",
+        "desc": "SARS-CoV-2 RNA polymerase cofactors nsp7+nsp8. Low sequence identity to known proteins but conserved folds — structural arm recovers CATH class.",
+        "use_structure": True,
     },
     "multidomain": {
         "label": "Multi-domain",
