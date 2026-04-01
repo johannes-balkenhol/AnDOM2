@@ -38,15 +38,14 @@ BATCH_EXAMPLES = {
     "dark_proteome": {
         "label": "Dark proteome",
         "fasta": (
-            ">FG_nucleoporin_fragment\n"
-            "MSNTGGFGFGSSFGSGFGSGFGSGFGSSFGSGFGSGFGSGFGSSFGSGFGSGFGSGFGSSFGSGFG\n"
-            ">Alpha_synuclein\n"
-            "MDVFMKGLSKAKEGVVAAAEKTKQGVAEAAGKTKEGVLYVGSKTKEGVVHGVATVAEKTKEQVTNVGG\n"
-            "AVVTGVTAVAQKTVEGAGSIAAATGFVKKDQLGKNEEGAPQEGILEDMPVDPDNEAYEMPSEEGYQDYEPEA\n"
-            ">Tau_repeat\n"
-            "MAEPRQEFEVMEDHAGTYGLGDRKDQGGYTMHQDQEGDTDAGLKESPLQTPTEDGSEEPGSETSDAKSTPT\n"
+            ">SARS-CoV-2_nsp7\n"
+            "MSKMVLSGGFGAGVQFMNLAKSTGPVVAAAVNGLMNLFGQKSPKTVNLNKDYIQRDTGEALNKILQDYINGVAPKALENRQLAGLRQLQEQR\n"
+            ">Phage_T4_Soc\n"
+            "MSDNKQIKAIVESVKDKLTSIKTSNDKLNQEADLIAKNGKNAISGVLENGKAEITKLQEELAKKAGVSTLSADDLAKKKNTDLVSIDQAKLKAAK\n"
+            ">Methanogen_hypothetical\n"
+            "MKILIVDDHPVVREGILEYLLSAEGYEVVCAEDGQEALDIYEDHPDLVLMDLMMPGMDGFELCRQIRQLDPRIPVLMLTAKDDEYDKVLGLEIGADDYVTKPFSTREELLARIRAHL\n"
         ),
-        "desc": "Proteins with no/few sequence homologs — InterPro finds nothing, structural arm recovers domain class.",
+        "desc": "Dark proteome proteins — SARS-CoV-2 nsp7, phage capsid protein, archaeal hypothetical protein. Sequence search finds nothing; structural arm recovers CATH domain.",
         "use_structure": True,
     },
     "viral_phage": {
