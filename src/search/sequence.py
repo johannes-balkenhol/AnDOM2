@@ -15,7 +15,7 @@ from pathlib import Path
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from config import MMSEQS, SCOPE_DB, TMP_DIR, SCOP_CLASSES
+from config import MMSEQS, SCOPE_DB, SCOPE_DB_95, TMP_DIR, SCOP_CLASSES
 import db.lookup as lookup
 
 
@@ -25,6 +25,7 @@ def run(
     iterations: int   = 3,
     threads:    int   = 8,
     tmp_dir:    str | None = None,
+    use_95:     bool  = True,
 ) -> tuple:
     """
     Run MMseqs2 PSI-search against SCOPe.
@@ -61,9 +62,9 @@ def run(
 
     cmds = [
         f"{MMSEQS} createdb {query_fasta} {query_db} -v 0",
-        (f"{MMSEQS} search {query_db} {SCOPE_DB} {result_db} {mmseqs_tmp} "
+        (f"{MMSEQS} search {query_db} {SCOPE_DB_95 if use_95 else SCOPE_DB} {result_db} {mmseqs_tmp} "
          f"--num-iterations {iterations} -e {evalue} -v 0 --threads {threads}"),
-        (f"{MMSEQS} convertalis {query_db} {SCOPE_DB} {result_db} {result_tsv} "
+        (f"{MMSEQS} convertalis {query_db} {SCOPE_DB_95 if use_95 else SCOPE_DB} {result_db} {result_tsv} "
          f"--format-output query,target,evalue,bits,qstart,qend,tstart,tend,pident -v 0"),
     ]
     for cmd in cmds:

@@ -20,8 +20,10 @@ MMSEQS   = str(_mmseqs_local) if _mmseqs_local.exists() else (_shutil.which("mms
 FOLDSEEK = _shutil.which("foldseek") or "foldseek"
 
 # ── database paths ────────────────────────────────────────────────────────────
-SCOPE_DB = str(DATA_DIR / "scopeSeqDB")
-SCOPE_FA = str(DATA_DIR / "scopeseq_40.fa")
+SCOPE_DB    = str(DATA_DIR / "scopeSeqDB")
+SCOPE_DB_95 = str(DATA_DIR / "scopeSeqDB_95")
+SCOPE_FA    = str(DATA_DIR / "scopeseq_40.fa")
+SCOPE_FA_95 = str(DATA_DIR / "scopeseq_95.fa")
 CATH_DB  = str(DATA_DIR / "cathDB")
 
 # ── external APIs ─────────────────────────────────────────────────────────────

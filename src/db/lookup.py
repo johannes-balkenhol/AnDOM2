@@ -14,11 +14,11 @@ from pathlib import Path
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from config import SCOPE_FA, DATA_DIR
+from config import SCOPE_FA, SCOPE_FA_95, DATA_DIR
 
 
 @st.cache_data
-def _load(fa_file: str = SCOPE_FA) -> dict:
+def _load(fa_file: str = SCOPE_FA, include_95: bool = True) -> dict:
     lookup: dict = {}
     with open(fa_file) as f:
         for line in f:
@@ -74,8 +74,10 @@ def get(domain_id: str) -> dict:
 
 
 def all_domains() -> dict:
-    """Return the full SCOPe lookup dict."""
-    return _load()
+    """Return the full SCOPe lookup dict (40% + 95%)."""
+    d = _load(SCOPE_FA)
+    d.update(_load(SCOPE_FA_95))
+    return d
 
 
 def get_cath_code(domain_id: str) -> str:
