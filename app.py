@@ -224,8 +224,30 @@ with page[0]:
                                  "struct_evalue": "Struct e-val"}),
                     use_container_width=True, hide_index=True,
                 )
-
-            # domain bar
+                # functional enrichment for top both hit
+                both_hits = fused[fused["evidence"]=="both"]
+                if not both_hits.empty:
+                    top = both_hits.iloc[0]
+                    pdb = str(top["scope_domain"])[1:5].lower()
+                    with st.expander("🔬 Functional annotation (top hit)"):
+                        try:
+                            import requests as _req
+                            r = _req.get(f"https://data.rcsb.org/rest/v1/core/polymer_entity/{pdb}/1", timeout=5)
+                            uids = r.json().get("rcsb_polymer_entity_container_identifiers",{}).get("uniprot_ids",[]) if r.status_code==200 else []
+                            if uids:
+                                uid = uids[0]
+                                from search.ensemble import enrich_with_pfam, enrich_with_uniprot
+                                uni = enrich_with_uniprot(uid)
+                                pfam = enrich_with_pfam(uid)
+                                st.markdown(f"**UniProt:** [{uid}](https://www.uniprot.org/uniprot/{uid}) | **Gene:** {uni.get('gene','—')} | **Organism:** {uni.get('organism','—')}")
+                                if uni.get("function"):
+                                    st.markdown(f"**Function:** {uni['function'][:300]}")
+                                if pfam:
+                                    st.markdown("**Pfam:** " + ", ".join(f"{p['pfam_id']} {p['name']}" for p in pfam))
+                            else:
+                                st.info("No UniProt mapping found.")
+                        except Exception as _e:
+                            st.warning(f"Enrichment unavailable: {_e}")
             st.subheader("Domain Architecture Map")
             bar_len = max(
                 df_seq["qend"].max() if df_seq is not None and len(df_seq) > 0 else 1,
