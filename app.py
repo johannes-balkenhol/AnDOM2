@@ -150,6 +150,14 @@ def render_batch_cards(df_res, job_id):
                     st.markdown(f"**Fold:** `{sccs}` — {cls_name}")
                     if pdb_link: st.markdown(f"**Top hit:** [{pdb_id}]({pdb_link})")
                     st.caption(f"e-value: {ev} · {len(seq_hits)} SCOPe hits")
+                    if len(seq_hits) > 1:
+                        alts = seq_hits.iloc[1:5]
+                        parts = []
+                        for _, r in alts.iterrows():
+                            pl = str(r.get("PDB link",""))
+                            pid = pl.split("/")[-1] if pl else ""
+                            if pid: parts.append(f"[{pid}]({pl})")
+                        if parts: st.caption("Also: " + " · ".join(parts))
                 else:
                     st.info("No sequence homologs in SCOPe ASTRAL 40%")
             with col2:
