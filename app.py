@@ -116,6 +116,77 @@ with st.sidebar:
     st.divider()
     st.caption(f"Batch limit: **{MAX_SEQUENCES}** seq · **{MAX_SEQ_LEN}** aa max")
 
+
+def render_batch_cards(df_res, job_id):
+    import pandas as pd
+    from db.lookup import get_cath_code, cath_code_to_scop_class
+    if df_res.empty:
+        st.warning("No domain hits found — try enabling structural search for dark proteome proteins.")
+        return
+    queries = df_res["query_id"].unique() if "query_id" in df_res.columns else df_res["query"].unique()
+    for qid in queries:
+        q_df = df_res[df_res["query_id"]==qid] if "query_id" in df_res.columns else df_res[df_res["query"]==qid]
+        seq_hits = q_df[q_df["source"]=="SCOPe_sequence"] if "source" in q_df.columns else q_df
+        str_hits = q_df[q_df["source"]=="CATH_structure"] if "source" in q_df.columns else pd.DataFrame()
+        has_seq = len(seq_hits) > 0
+        has_str = len(str_hits) > 0
+        if has_seq and has_str: icon,label = "🟢","Both arms — high confidence"
+        elif has_seq: icon,label = "🔵","Sequence only"
+        elif has_str: icon,label = "🟠","Structure only (dark proteome recovery)"
+        else: icon,label = "⚪","No hits found"
+        with st.container(border=True):
+            seq_len = int(seq_hits.iloc[0]["qend"]) if has_seq and "qend" in seq_hits.columns else "?"
+            st.markdown(f"### {icon} {qid}")
+            st.caption(f"{label} · {seq_len} aa analysed")
+            col1, col2 = st.columns(2)
+            with col1:
+                st.markdown("**🧬 Sequence arm (SCOPe)**")
+                if has_seq:
+                    top = seq_hits.iloc[0]
+                    sccs = top.get("sccs","—"); cls_name = top.get("class_name","—")
+                    pdb_link = top.get("PDB link",""); pdb_id = pdb_link.split("/")[-1] if pdb_link else "—"
+                    try: ev = f"{float(top.get('evalue',0)):.1e}"
+                    except: ev = "—"
+                    st.markdown(f"**Fold:** `{sccs}` — {cls_name}")
+                    if pdb_link: st.markdown(f"**Top hit:** [{pdb_id}]({pdb_link})")
+                    st.caption(f"e-value: {ev} · {len(seq_hits)} SCOPe hits")
+                else:
+                    st.info("No sequence homologs in SCOPe ASTRAL 40%")
+            with col2:
+                st.markdown("**🏗️ Structure arm (CATH50)**")
+                if has_str:
+                    top_s = str_hits.iloc[0]
+                    target = top_s.get("target","—")
+                    cath_code = get_cath_code(str(target))
+                    scop_cls = cath_code_to_scop_class(cath_code) if cath_code else "?"
+                    pdb_link_s = top_s.get("PDB link",""); pdb_id_s = pdb_link_s.split("/")[-1] if pdb_link_s else "—"
+                    try: lddt_s = f"{float(top_s.get('lddt',0)):.2f}"
+                    except: lddt_s = "—"
+                    try: ev_s = f"{float(top_s.get('evalue',0)):.1e}"
+                    except: ev_s = "—"
+                    st.markdown(f"**CATH:** `{cath_code}` → class `{scop_cls}`")
+                    if pdb_link_s: st.markdown(f"**Top hit:** [{pdb_id_s}]({pdb_link_s})")
+                    st.caption(f"lDDT: {lddt_s} · e-value: {ev_s} · {len(str_hits)} CATH hits")
+                else:
+                    st.info("Structural search not run or no CATH hits")
+            if has_seq:
+                pdb_id_enr = seq_hits.iloc[0].get("PDB link","").split("/")[-1]
+                if pdb_id_enr and len(pdb_id_enr)==4:
+                    with st.expander("🔬 Functional annotation"):
+                        try:
+                            import requests as _rq
+                            r = _rq.get(f"https://data.rcsb.org/rest/v1/core/polymer_entity/{pdb_id_enr}/1",timeout=5)
+                            uids = r.json().get("rcsb_polymer_entity_container_identifiers",{}).get("uniprot_ids",[]) if r.status_code==200 else []
+                            if uids:
+                                uid=uids[0]
+                                from search.ensemble import enrich_with_pfam,enrich_with_uniprot
+                                uni=enrich_with_uniprot(uid); pfam=enrich_with_pfam(uid)
+                                st.markdown(f"**UniProt:** [{uid}](https://www.uniprot.org/uniprot/{uid}) · **Gene:** {uni.get('gene','—')} · **Organism:** {uni.get('organism','—')}")
+                                if uni.get("function"): st.markdown(f"**Function:** {uni['function'][:300]}")
+                                if pfam: st.markdown("**Pfam:** "+" · ".join(f"`{p['pfam_id']}` {p['name']}" for p in pfam[:3]))
+                            else: st.caption("No UniProt mapping found.")
+                        except Exception as _e: st.caption(f"Enrichment unavailable: {_e}")
+
 page = st.tabs(["Search", "Batch", "Methods"])
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -404,11 +475,7 @@ with page[1]:
                             file_name=f"AnDOM_batch_{job['job_id']}.tsv",
                             mime="text/tab-separated-values",
                             key=f"dl_{job['job_id']}")
-                        if df_res.empty:
-                            st.warning("No hits found — enable structural search for dark proteome proteins.")
-                        else:
-                            with st.expander(f"📊 View results — {len(df_res)} hits"):
-                                st.dataframe(df_res, use_container_width=True, hide_index=True)
+                        render_batch_cards(df_res, job["job_id"])
                     if s in ("queued","running"):
                         if c3.button("Cancel", key="cancel_"+job["job_id"]):
                             batch_mgr.cancel(job["job_id"]); st.rerun()
