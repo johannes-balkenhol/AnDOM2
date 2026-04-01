@@ -116,7 +116,7 @@ with st.sidebar:
     st.divider()
     st.caption(f"Batch limit: **{MAX_SEQUENCES}** seq · **{MAX_SEQ_LEN}** aa max")
 
-page = st.tabs(["Search", "Batch", "Benchmark", "Methods"])
+page = st.tabs(["Search", "Batch", "Methods"])
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 0 — Search
@@ -394,9 +394,9 @@ with page[1]:
                     st.error(job["error"])
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TAB 2 — Benchmark (background thread, non-blocking)
+# TAB 2 — Benchmark (background thread, non-blocking) — HIDDEN FROM PUBLIC UI
 # ══════════════════════════════════════════════════════════════════════════════
-with page[2]:
+if False:
     st.title("Benchmark — Sequence vs Structure vs Ensemble")
     st.markdown(
         "Compares all three arms on **SCOPE-40** (domains clustered at 40% sequence identity — "
@@ -486,7 +486,7 @@ with page[2]:
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 3 — Methods
 # ══════════════════════════════════════════════════════════════════════════════
-with page[3]:
+with page[2]:
     st.title("Methods — AnDOM 2.0")
     st.markdown(
         "AnDOM 2.0 updates the original AnDOM server "
