@@ -159,7 +159,7 @@ def render_batch_cards(df_res, job_id):
                             if pid: parts.append(f"[{pid}]({pl})")
                         if parts: st.caption("Also: " + " · ".join(parts))
                 else:
-                    st.info("No sequence homologs in SCOPe ASTRAL 40%")
+                    st.info("No sequence homologs in SCOPe ASTRAL 95%")
             with col2:
                 st.markdown("**🏗️ Structure arm (CATH50)**")
                 if has_str:
@@ -375,7 +375,7 @@ with page[0]:
                     st.info("No structural hits or structural search disabled.")
 
     st.divider()
-    st.caption("AnDOM 2.0 | SCOPe 2.08 ASTRAL 40% (MMseqs2 PSI) + CATH50 (ESMFold + Foldseek) | Dandekar Lab Wuerzburg")
+    st.caption("AnDOM 2.0 | SCOPe 2.08 ASTRAL 95% (MMseqs2 PSI) + CATH50 (ESMFold + Foldseek) | Dandekar Lab Wuerzburg")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 1 — Batch
@@ -612,7 +612,7 @@ with page[2]:
         st.markdown("""
 **Database updates**
 - SCOP 1.50 → SCOPe 2.08 (2023)
-- ~7,000 → 15,177 domains (+117%)
+- ~7,000 → 35,494 domains (+117%)
 - ASTRAL compendium maintained within SCOPe
 
 **Search engine**
