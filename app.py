@@ -123,7 +123,7 @@ def render_batch_cards(df_res, job_id):
     if df_res.empty:
         st.warning("No domain hits found — try enabling structural search for dark proteome proteins.")
         return
-    queries = df_res["query_id"].unique() if "query_id" in df_res.columns else df_res["query"].unique()
+    queries = [q for q in (df_res["query_id"].unique() if "query_id" in df_res.columns else df_res["query"].unique()) if str(q) != "nan"]
     for qid in queries:
         q_df = df_res[df_res["query_id"]==qid] if "query_id" in df_res.columns else df_res[df_res["query"]==qid]
         seq_hits = q_df[q_df["source"]=="SCOPe_sequence"] if "source" in q_df.columns else q_df
