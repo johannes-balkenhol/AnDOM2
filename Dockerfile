@@ -23,7 +23,7 @@ RUN wget -q https://mmseqs.com/foldseek/foldseek-linux-avx2.tar.gz \
     && rm -rf foldseek foldseek-linux-avx2.tar.gz
 
 # ── install HHblits ───────────────────────────────────────────────────────────
-RUN wget -q https://github.com/soedinglab/hh-suite/releases/download/v3.3.0/hhsuite-3.3.0-SSE2-Linux.tar.gz     && tar xf hhsuite-3.3.0-SSE2-Linux.tar.gz     && mv hhsuite-3.3.0-SSE2-Linux/bin/hhblits /usr/local/bin/hhblits     && mv hhsuite-3.3.0-SSE2-Linux/bin/hhsearch /usr/local/bin/hhsearch     && mv hhsuite-3.3.0-SSE2-Linux/scripts /usr/local/hhsuite-scripts     && rm -rf hhsuite-3.3.0-SSE2-Linux hhsuite-3.3.0-SSE2-Linux.tar.gz
+RUN wget -q https://github.com/soedinglab/hh-suite/releases/download/v3.3.0/hhsuite-3.3.0-SSE2-Linux.tar.gz     && tar xf hhsuite-3.3.0-SSE2-Linux.tar.gz     && ls -la     && find . -name hhblits 2>/dev/null     && cp $(find . -name hhblits) /usr/local/bin/hhblits     && cp $(find . -name hhsearch) /usr/local/bin/hhsearch     && rm -rf hhsuite* hh*
 # ── install mmseqs2 ───────────────────────────────────────────────────────────
 RUN wget -q https://mmseqs.com/latest/mmseqs-linux-avx2.tar.gz \
     && tar xf mmseqs-linux-avx2.tar.gz \
