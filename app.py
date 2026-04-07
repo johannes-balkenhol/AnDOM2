@@ -308,6 +308,10 @@ with page[0]:
                         return "AlphaFold:" + str(d).split("_")[1]
                     return d
                 fused["cath_domain_display"] = fused["cath_domain"].apply(clean_cath_domain)
+                # Format e-values for display
+                for col in ["seq_evalue", "struct_evalue"]:
+                    if col in fused.columns:
+                        fused[col] = fused[col].apply(lambda x: f"{float(x):.2e}" if x is not None and str(x) != "None" and str(x) != "nan" else "—")
                 st.dataframe(
                     fused[["rank","ev","scope_domain","sccs","cath_domain_display","cath_code",
                            "evidence","ensemble_score","seq_evalue","struct_evalue","lddt"]].rename(
