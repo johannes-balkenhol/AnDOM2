@@ -145,7 +145,7 @@ def render_batch_cards(df_res, job_id):
         elif has_str: icon,label = "🟠","Structure only (dark proteome recovery)"
         else: icon,label = "⚪","No hits found"
         with st.container(border=True):
-            seq_len = int(seq_hits.iloc[0]["qend"]) if has_seq and "qend" in seq_hits.columns else "?"
+            seq_len = int(seq_hits.iloc[0]["qend"]) if has_seq and "qend" in seq_hits.columns else (int(str_hits.iloc[0]["qend"]) if has_str and "qend" in str_hits.columns else "?")
             st.markdown(f"### {icon} {qid}")
             st.caption(f"{label} · {seq_len} aa analysed")
             col1, col2 = st.columns(2)
