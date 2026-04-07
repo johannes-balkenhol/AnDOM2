@@ -106,6 +106,11 @@ with st.sidebar:
         disabled=True)
     if use_hhblits:
         st.caption("HHblits arm: PDB70 database loading...")
+    use_hhblits = st.toggle("🔬 Deep search (HHblits twilight zone)", value=False,
+        help="Profile-profile search via HHblits+UniClust30. Finds homologs at 10-15% identity. Adds ~2 min per search. Requires PDB70 database.",
+        disabled=True)
+    if use_hhblits:
+        st.caption("HHblits arm: PDB70 database loading...")
     st.divider()
     st.markdown("**SCOP class colours**")
     for k, v in SCOP_CLASSES.items():
