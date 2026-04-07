@@ -292,12 +292,18 @@ with page[0]:
 
                 from db.lookup import get_cath_code
                 fused["cath_code"] = fused["cath_domain"].apply(get_cath_code)
+                # Clean up AlphaFold domain IDs for display
+                def clean_cath_domain(d):
+                    if str(d).startswith("af_"):
+                        return "AlphaFold:" + str(d).split("_")[1]
+                    return d
+                fused["cath_domain_display"] = fused["cath_domain"].apply(clean_cath_domain)
                 st.dataframe(
-                    fused[["rank","ev","scope_domain","sccs","cath_domain","cath_code",
+                    fused[["rank","ev","scope_domain","sccs","cath_domain_display","cath_code",
                            "evidence","ensemble_score","seq_evalue","struct_evalue","lddt"]].rename(
                         columns={"ev": "",
                                  "scope_domain": "SCOPe domain", "sccs": "SCOP class",
-                                 "cath_domain": "CATH domain", "cath_code": "CATH code",
+                                 "cath_domain_display": "CATH domain", "cath_code": "CATH code",
                                  "ensemble_score": "Score",
                                  "seq_evalue": "Seq e-val",
                                  "struct_evalue": "Struct e-val"}),
