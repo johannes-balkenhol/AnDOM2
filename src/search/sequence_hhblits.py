@@ -1,7 +1,7 @@
 """
 HHblits/HHsearch-based twilight zone search.
 Step 1: query -> HHblits vs UniClust30 -> query.a3m (MSA)
-Step 2: query.a3m -> HHsearch vs PDB70 -> remote homologs with SCOPe annotation
+Step 2: query.a3m -> HHsearch vs PDB70 -> remote homologs with SCOPe + CATH annotation
 Finds homologs at 10-15% sequence identity.
 """
 import re
@@ -17,12 +17,30 @@ PDB70_DB      = str(DATA_DIR / "pdb70" / "pdb70")
 HHBLITS       = "hhblits"
 HHSEARCH      = "hhsearch"
 
+SCOP_CLASS_NAMES = {
+    "a": "All alpha",
+    "b": "All beta",
+    "c": "Alpha/beta",
+    "d": "Alpha+beta",
+    "e": "Multi-domain",
+    "f": "Membrane",
+    "g": "Small proteins",
+}
+
+
 def run_hhblits(
     fasta:      str,
     iterations: int = 3,
     threads:    int = 8,
     tmp_dir:    str | None = None,
 ) -> tuple:
+    """
+    HHblits search: query -> UniClust30 profile -> PDB70 hits.
+    Returns (DataFrame, error_string).
+    DataFrame columns: rank, hit_name, pdb, prob, evalue, score,
+                       qstart, qend, tstart, tend, sccs, class_name,
+                       cath_code, PDB link
+    """
     tmp = Path(tmp_dir) if tmp_dir else Path(TMP_DIR) / uuid.uuid4().hex
     tmp.mkdir(parents=True, exist_ok=True)
 
@@ -34,6 +52,7 @@ def run_hhblits(
         fasta = f">query\n{fasta}"
     query_fa.write_text(fasta)
 
+    # Step 1: build MSA profile with HHblits vs UniClust30
     cmd1 = (f"{HHBLITS} -i {query_fa} -d {UNICLUST30_DB} "
             f"-oa3m {query_a3m} -n {iterations} -cpu {threads} -v 0")
     r1 = subprocess.run(cmd1, shell=True, capture_output=True, text=True)
@@ -42,6 +61,7 @@ def run_hhblits(
     if not query_a3m.exists() or query_a3m.stat().st_size == 0:
         return None, "HHblits produced no alignment"
 
+    # Step 2: search profile against PDB70
     cmd2 = (f"{HHSEARCH} -i {query_a3m} -d {PDB70_DB} "
             f"-o {hhr_file} -cpu {threads} -v 0 -p 20 -z 250 -b 250")
     r2 = subprocess.run(cmd2, shell=True, capture_output=True, text=True)
@@ -55,9 +75,14 @@ def run_hhblits(
         return None, None
 
     df = pd.DataFrame(hits)
-    lk = lookup.all_domains()
-    df["sccs"]       = df["pdb"].map(lambda x: _pdb_to_sccs(x, lk))
-    df["class_name"] = df["sccs"].map(lambda x: x.split(".")[0] if x and x != "?" else "?")
+
+    # Annotate each hit with SCOPe sccs and CATH code via fast PDB lookups
+    df["sccs"]       = df["pdb"].map(lambda x: lookup.pdb_to_sccs(x) or "—")
+    df["class_name"] = df["sccs"].map(
+        lambda x: SCOP_CLASS_NAMES.get(x[0], "—") if x and x not in ("—", "?") else "—"
+    )
+    df["cath_code"]  = df["pdb"].map(lambda x: lookup.pdb_to_cath_code(x) or "—")
+
     return df, None
 
 
@@ -68,13 +93,11 @@ def _parse_hhr(hhr_file: Path) -> list:
     Each hit line (fixed-width) looks like:
       1 6NIL_L DNA dC->dU-editing e 100.0 3.4E-47 3.7E-52  277.7   0.0  104    1-104     1-104 (138)
 
-    Strategy: strip the trailing (tlen), then rsplit() to extract the
-    numeric columns from the right. The description in the middle is ignored.
+    Strategy: strip trailing (tlen), then rsplit() to peel off numeric
+    columns from the right. The variable-width description is ignored.
     """
     hits = []
     in_hits = False
-
-    # Matches trailing template length e.g. " (138)"
     tlen_re = re.compile(r'\((\d+)\)\s*$')
 
     with open(hhr_file) as f:
@@ -87,48 +110,28 @@ def _parse_hhr(hhr_file: Path) -> list:
             if line.startswith(">"):
                 break
             stripped = line.strip()
-            if not stripped:
-                continue
-            # Must start with a rank number
-            if not stripped[0].isdigit():
+            if not stripped or not stripped[0].isdigit():
                 continue
 
             try:
-                # Strip template length from end
                 tlen_m = tlen_re.search(line)
                 if not tlen_m:
                     continue
                 line_body = line[:tlen_m.start()].strip()
 
-                # Split from right to get fixed numeric columns:
-                # ... Cols Q_start-Q_end T_start-T_end
-                # rsplit to peel off T range, Q range, Cols
+                # Peel off from right: T_range  Q_range  Cols
                 parts_r = line_body.rsplit(None, 3)
-                # parts_r[-1] = T_start-T_end  e.g. "1-104"
-                # parts_r[-2] = Q_start-Q_end  e.g. "1-104"
-                # parts_r[-3] = Cols            e.g. "104"
-                # parts_r[-4] = remainder with description + leading numbers
-                t_range = parts_r[-1]   # "1-104"
-                q_range = parts_r[-2]   # "1-104"
-                cols    = parts_r[-3]   # "104"
-                left    = parts_r[-4]   # "  1 6NIL_L ... 100.0 3.4E-47 3.7E-52  277.7   0.0"
+                t_range = parts_r[-1]
+                q_range = parts_r[-2]
+                left    = parts_r[-4]
 
-                # Now rsplit the left part to get SS, Score, P-value, E-value, Prob
+                # Peel off from left remainder: SS  Score  P-value  E-value  Prob
                 left_parts = left.rsplit(None, 5)
-                # left_parts[-1] = SS        "0.0"
-                # left_parts[-2] = Score     "277.7"
-                # left_parts[-3] = P-value   "3.7E-52"
-                # left_parts[-4] = E-value   "3.4E-47"
-                # left_parts[-5] = Prob      "100.0"
-                # left_parts[0]  = "  1 6NIL_L description..."
-                ss      = left_parts[-1]
-                score   = left_parts[-2]
-                pvalue  = left_parts[-3]
                 evalue  = left_parts[-4]
                 prob    = left_parts[-5]
-                head    = left_parts[0]   # "1 6NIL_L description..."
+                score   = left_parts[-2]
+                head    = left_parts[0]
 
-                # Parse rank and hit name from head
                 head_parts = head.split(None, 2)
                 rank     = int(head_parts[0])
                 hit_name = head_parts[1]
@@ -153,12 +156,3 @@ def _parse_hhr(hhr_file: Path) -> list:
             except Exception:
                 pass
     return hits
-
-
-def _pdb_to_sccs(pdb: str, lk: dict) -> str:
-    """Find SCOPe sccs for a PDB code by scanning lookup."""
-    pdb = pdb.lower()
-    for domain_id, info in lk.items():
-        if domain_id[1:5].lower() == pdb:
-            return info.get("sccs", "?")
-    return "?"
