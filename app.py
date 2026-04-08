@@ -103,7 +103,7 @@ with st.sidebar:
     use_struct = st.toggle("Structural search (ESMFold + Foldseek)", value=True)
     use_hhblits = st.toggle("🔬 Deep search (HHblits twilight zone)", value=False, key="use_hhblits",
         help="Profile-profile search via HHblits+UniClust30. Finds homologs at 10-15% identity. Adds ~2 min per search. Requires PDB70 database.",
-        disabled=True)
+        disabled=False)
     if use_hhblits:
         st.caption("HHblits arm: PDB70 database loading...")
     st.divider()
@@ -272,6 +272,19 @@ with page[0]:
                         df_str = df_str.head(max_hits)
                         st.success(f"Structure: {len(df_str)} CATH hits")
 
+            df_hh = None
+            if use_hhblits:
+                with st.spinner("🔬 Deep search — HHblits + PDB70..."):
+                    from search.sequence_hhblits import run_hhblits
+                    import uuid as _uuid2; _hid = _uuid2.uuid4().hex[:8]
+                    df_hh, err_hh = run_hhblits(fasta, iterations=3, threads=8, tmp_dir=f"/output/tmp/hh_{_hid}")
+                if err_hh:
+                    st.warning(f"HHblits: {err_hh}")
+                elif df_hh is not None and len(df_hh) > 0:
+                    df_hh["source"] = "HHblits_PDB70"
+                    st.success(f"HHblits: {len(df_hh)} PDB70 hits")
+                else:
+                    st.info("HHblits: no hits found")
             df_seq, df_str = add_scores(df_seq, df_str)
 
             # ── ensemble fusion (matched by PDB code) ──────────────────────
