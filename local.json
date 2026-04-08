@@ -1,0 +1,67 @@
+{
+  "services": {
+    "CoAuthoring": {
+      "sql": {
+        "type": "postgres",
+        "dbHost": "localhost",
+        "dbPort": "5432",
+        "dbName": "onlyoffice",
+        "dbUser": "onlyoffice",
+        "dbPass": "onlyoffice"
+      },
+      "token": {
+        "enable": {
+          "request": {
+            "inbox": true,
+            "outbox": true
+          },
+          "browser": true
+        },
+        "inbox": {
+          "header": "Authorization",
+          "inBody": false
+        },
+        "outbox": {
+          "header": "Authorization",
+          "inBody": false
+        }
+      },
+      "secret": {
+        "browser": {
+          "string": "UiNg6NvoEqXgFdweZE4Sp95m"
+        },
+        "inbox": {
+          "string": "UiNg6NvoEqXgFdweZE4Sp95m"
+        },
+        "outbox": {
+          "string": "UiNg6NvoEqXgFdweZE4Sp95m"
+        },
+        "session": {
+          "string": "UiNg6NvoEqXgFdweZE4Sp95m"
+        }
+      },
+      "requestDefaults": {
+        "rejectUnauthorized": false
+      }
+    }
+  },
+  "rabbitmq": {
+    "url": "amqp://guest:guest@localhost"
+  },
+  "wopi": {
+    "enable": false,
+    "privateKey": "-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQCwwrk5Q00eRH7l\n9f89HZgroWtcvl/EbJL4BeYvyPQucooO5sCZ/43FhjRbrDpnAluo19JLg9539iMh\nzRPYDlBcntuntO4+Yv/8Dltwqx2t9ZSRGYuiwkUJZCvqHCL6slw1QcNMm92IHDro\nDfyQ0iDP3ddY8tSPanVZ1q4BVzbzGy4oSuI53k0oUB0fVrm8gv4vKLa1GIHQoX8r\nMcF7tUvW8yjMT0F0XFa6dKXBSyPRXrqgidfzKq9TPLQOLbwd1jM4+Cx6QDdi6vSu\nfvSrf14GNF8kX4ZgYmhJ6TViq4PhkSMfChF9fRvFDQR/G6RU2QcR6iuNYLoqZjDN\nPBkkX1DNAgMBAAECggEAR6OsEV7LByzop4gjmeAAOBK0okKQKtp8WGR/rjdKa/bF\nKJPyVJfkHD2vw8XSZ8RnZM+P7kY0aLdL9tuYotTuUhOaX+avNn7GVCB3g/r+TO5+\n9638T4tgEpXUTI55yNR4FaehIU/8obkbUMi2Z/WaEdVN/cFxT+zsQeyF2oo//ZgG\nAmvx8FB2DXpL7QyR5wTpcl52VQpJqE+6cvFIc7E66+fOWyOHpnMuk6kLwfse17br\n8Co8GTgIPd+54wRgMUGCDEV3GkAIVF1+9dD4+9G1kSQ+xu/9WeXq7PfC7w0cxxMP\n5RDLQO5EY5orl1pkw8OIq2xoIdRG6NtemxjlMq/e+wKBgQDm68RdCa7muxhICwrd\n7qp4dYJbZ61NYbc8uM0ElfFaT+X9EnYcdTxN39NKwOWWK9+k8tTwNK2FaooOOzO5\nzKEMOCwFvIhbiyI9RxWgdRG0/4bjcP3cTPl/tHCc8BHBoFfdiO/JwVhiwftgGA48\nQXAIx6tNF8grG6pRpceUOvftuwKBgQDD9SbQ8MNg6g5NlvHEjTDkw02c3DHxiO3d\n0c682/T8Qhbb+0qZstjC4PdSjvLn846TiSD1kf0tFyYG1A7vm8tUMqeeosdWLdzg\nQae6NDvd2ARdpwcfQrmavlvImxRu3C9oWXLnSQMsrdMw22cO5M/yeqMlqabV0YtV\nxPlVO1EPFwKBgFS4MvafUte71JC53GbH5SsEkarPQrmdHAjfE/iWulGT9qD+YO7X\n5CP99hr64kBSIF736D+oU/EawUOvXK7R8FP3V89S+AP967Xnmnuf97sb9HUFQ13L\nr822eYpaWWlcVmAkmTTABplU6dC7gp2AtIXEG4jRLNMD91y1IZ+0crl5AoGBALeL\nxyHqgncihOc0PZ0HSwbb0LTeo4FD6tndDbJkrOIj3VmL1WKF3Pcc1UxlTSzqO2AC\nD/c1GVnE1v+KXbsdyKRDFjJG8kPMjZkYpkyJZJH1JpG6Q7eKPmOtbjdG2yrD3zv0\nnOX6w5hz8N9QgwW2WPkc2fgLIpQgxExARfMJrnFdAoGBAMO7KMm9X1Y7fuCiwehx\n5CFNFCFz2otaHNPp6RHQ3CHgTen+XRUqUieVIHNSECwtuk6TffjfyTC1340cB6T0\n6jysEdx6DOJWwbknGIuPxt8prWrJxIFX/XnjLOb4/tmmIr7KA/b+WQxi3P+iqYYa\nSPU6TtKhdawp0t4RJbW3rdwU\n-----END PRIVATE KEY-----\n",
+    "privateKeyOld": "-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQCwwrk5Q00eRH7l\n9f89HZgroWtcvl/EbJL4BeYvyPQucooO5sCZ/43FhjRbrDpnAluo19JLg9539iMh\nzRPYDlBcntuntO4+Yv/8Dltwqx2t9ZSRGYuiwkUJZCvqHCL6slw1QcNMm92IHDro\nDfyQ0iDP3ddY8tSPanVZ1q4BVzbzGy4oSuI53k0oUB0fVrm8gv4vKLa1GIHQoX8r\nMcF7tUvW8yjMT0F0XFa6dKXBSyPRXrqgidfzKq9TPLQOLbwd1jM4+Cx6QDdi6vSu\nfvSrf14GNF8kX4ZgYmhJ6TViq4PhkSMfChF9fRvFDQR/G6RU2QcR6iuNYLoqZjDN\nPBkkX1DNAgMBAAECggEAR6OsEV7LByzop4gjmeAAOBK0okKQKtp8WGR/rjdKa/bF\nKJPyVJfkHD2vw8XSZ8RnZM+P7kY0aLdL9tuYotTuUhOaX+avNn7GVCB3g/r+TO5+\n9638T4tgEpXUTI55yNR4FaehIU/8obkbUMi2Z/WaEdVN/cFxT+zsQeyF2oo//ZgG\nAmvx8FB2DXpL7QyR5wTpcl52VQpJqE+6cvFIc7E66+fOWyOHpnMuk6kLwfse17br\n8Co8GTgIPd+54wRgMUGCDEV3GkAIVF1+9dD4+9G1kSQ+xu/9WeXq7PfC7w0cxxMP\n5RDLQO5EY5orl1pkw8OIq2xoIdRG6NtemxjlMq/e+wKBgQDm68RdCa7muxhICwrd\n7qp4dYJbZ61NYbc8uM0ElfFaT+X9EnYcdTxN39NKwOWWK9+k8tTwNK2FaooOOzO5\nzKEMOCwFvIhbiyI9RxWgdRG0/4bjcP3cTPl/tHCc8BHBoFfdiO/JwVhiwftgGA48\nQXAIx6tNF8grG6pRpceUOvftuwKBgQDD9SbQ8MNg6g5NlvHEjTDkw02c3DHxiO3d\n0c682/T8Qhbb+0qZstjC4PdSjvLn846TiSD1kf0tFyYG1A7vm8tUMqeeosdWLdzg\nQae6NDvd2ARdpwcfQrmavlvImxRu3C9oWXLnSQMsrdMw22cO5M/yeqMlqabV0YtV\nxPlVO1EPFwKBgFS4MvafUte71JC53GbH5SsEkarPQrmdHAjfE/iWulGT9qD+YO7X\n5CP99hr64kBSIF736D+oU/EawUOvXK7R8FP3V89S+AP967Xnmnuf97sb9HUFQ13L\nr822eYpaWWlcVmAkmTTABplU6dC7gp2AtIXEG4jRLNMD91y1IZ+0crl5AoGBALeL\nxyHqgncihOc0PZ0HSwbb0LTeo4FD6tndDbJkrOIj3VmL1WKF3Pcc1UxlTSzqO2AC\nD/c1GVnE1v+KXbsdyKRDFjJG8kPMjZkYpkyJZJH1JpG6Q7eKPmOtbjdG2yrD3zv0\nnOX6w5hz8N9QgwW2WPkc2fgLIpQgxExARfMJrnFdAoGBAMO7KMm9X1Y7fuCiwehx\n5CFNFCFz2otaHNPp6RHQ3CHgTen+XRUqUieVIHNSECwtuk6TffjfyTC1340cB6T0\n6jysEdx6DOJWwbknGIuPxt8prWrJxIFX/XnjLOb4/tmmIr7KA/b+WQxi3P+iqYYa\nSPU6TtKhdawp0t4RJbW3rdwU\n-----END PRIVATE KEY-----\n",
+    "publicKey": "BgIAAACkAABSU0ExAAgAAAEAAQDNUF8kGTzNMGYqumCNK+oRB9lUpBt/BA3FG319EQofI5Hhg6tiNelJaGJghl8kXzQGXn+r9H6u9OpiN0B6LPg4M9YdvC0OtDxTryrz14mgul7RI0vBpXS6Vlx0QU/MKPPWS7V7wTErf6HQgRi1tigv/oK8uVYfHVAoTd454kooLhvzNlcBrtZZdWqP1PJY193PINKQ/A3oOhyI3ZtMw0E1XLL6IhzqK2QJRcKiixmRlPWtHatwWw78/2I+7rSn255cUA7YE80hI/Z33oNL0teoWwJnOqxbNIbFjf+ZwOYOinIu9Mgv5gX4kmzEX75ca6ErmB09//XlfkQeTUM5ucKw",
+    "publicKeyOld": "BgIAAACkAABSU0ExAAgAAAEAAQDNUF8kGTzNMGYqumCNK+oRB9lUpBt/BA3FG319EQofI5Hhg6tiNelJaGJghl8kXzQGXn+r9H6u9OpiN0B6LPg4M9YdvC0OtDxTryrz14mgul7RI0vBpXS6Vlx0QU/MKPPWS7V7wTErf6HQgRi1tigv/oK8uVYfHVAoTd454kooLhvzNlcBrtZZdWqP1PJY193PINKQ/A3oOhyI3ZtMw0E1XLL6IhzqK2QJRcKiixmRlPWtHatwWw78/2I+7rSn255cUA7YE80hI/Z33oNL0teoWwJnOqxbNIbFjf+ZwOYOinIu9Mgv5gX4kmzEX75ca6ErmB09//XlfkQeTUM5ucKw",
+    "modulus": "sMK5OUNNHkR+5fX/PR2YK6FrXL5fxGyS+AXmL8j0LnKKDubAmf+NxYY0W6w6ZwJbqNfSS4Ped/YjIc0T2A5QXJ7bp7TuPmL//A5bcKsdrfWUkRmLosJFCWQr6hwi+rJcNUHDTJvdiBw66A38kNIgz93XWPLUj2p1WdauAVc28xsuKEriOd5NKFAdH1a5vIL+Lyi2tRiB0KF/KzHBe7VL1vMozE9BdFxWunSlwUsj0V66oInX8yqvUzy0Di28HdYzOPgsekA3Yur0rn70q39eBjRfJF+GYGJoSek1YquD4ZEjHwoRfX0bxQ0EfxukVNkHEeorjWC6KmYwzTwZJF9QzQ==",
+    "modulusOld": "sMK5OUNNHkR+5fX/PR2YK6FrXL5fxGyS+AXmL8j0LnKKDubAmf+NxYY0W6w6ZwJbqNfSS4Ped/YjIc0T2A5QXJ7bp7TuPmL//A5bcKsdrfWUkRmLosJFCWQr6hwi+rJcNUHDTJvdiBw66A38kNIgz93XWPLUj2p1WdauAVc28xsuKEriOd5NKFAdH1a5vIL+Lyi2tRiB0KF/KzHBe7VL1vMozE9BdFxWunSlwUsj0V66oInX8yqvUzy0Di28HdYzOPgsekA3Yur0rn70q39eBjRfJF+GYGJoSek1YquD4ZEjHwoRfX0bxQ0EfxukVNkHEeorjWC6KmYwzTwZJF9QzQ==",
+    "exponent": 65537,
+    "exponentOld": 65537
+  },
+  "storage": {
+    "fs": {
+      "secretString": "mHVHk2ujk99Wkby3ppXW"
+    }
+  }
+}
