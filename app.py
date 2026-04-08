@@ -551,45 +551,7 @@ with page[0]:
                 if top_pdb:
                     render_func_expander(top_pdb, "🔬 Functional annotation (top ensemble hit)")
 
-            # ── raw hit tabs ──────────────────────────────────────────────────
-            tab1, tab2, tab3 = st.tabs(["SCOPe sequence hits", "CATH structural hits", "HHblits PDB70 hits"])
-            lk2 = lookup.all_domains()
-            with tab1:
-                if df_seq is not None and len(df_seq) > 0:
-                    disp = df_seq[[
-                        "target","sccs","class_name","description",
-                        "organism","evalue","bits","qstart","qend","pident","PDB link"
-                    ]].copy()
-                    disp["evalue"] = disp["evalue"].apply(fmt_e)
-                    disp["pident"] = disp["pident"].apply(lambda x: f"{float(x):.1f}%")
-                    st.dataframe(disp, use_container_width=True,
-                        column_config={"PDB link": st.column_config.LinkColumn("PDB link")})
-                else:
-                    st.info("No sequence hits.")
 
-            with tab2:
-                if df_str is not None and len(df_str) > 0:
-                    disp2 = df_str[[
-                        "target","evalue","bits","lddt","qstart","qend","PDB link"
-                    ]].copy()
-                    disp2["evalue"] = disp2["evalue"].apply(fmt_e)
-                    disp2["lddt"]   = disp2["lddt"].apply(lambda x: f"{float(x):.3f}")
-                    st.dataframe(disp2, use_container_width=True,
-                        column_config={"PDB link": st.column_config.LinkColumn("PDB link")})
-                else:
-                    st.info("No structural hits or structural search disabled.")
-
-            with tab3:
-                if df_hh is not None and len(df_hh) > 0:
-                    disp3 = df_hh[[
-                        "hit_name","pdb","prob","evalue","score","qstart","qend","sccs","PDB link"
-                    ]].copy()
-                    disp3["evalue"] = disp3["evalue"].apply(fmt_e)
-                    disp3["prob"]   = disp3["prob"].apply(lambda x: f"{float(x):.1f}%")
-                    st.dataframe(disp3, use_container_width=True,
-                        column_config={"PDB link": st.column_config.LinkColumn("PDB link")})
-                else:
-                    st.info("HHblits deep search not run or no hits found.")
 
     st.divider()
     st.caption(
