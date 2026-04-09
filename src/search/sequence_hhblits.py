@@ -14,6 +14,7 @@ import db.lookup as lookup
 
 UNICLUST30_DB = str(DATA_DIR / "uniclust30" / "uniclust30_2018_08" / "uniclust30_2018_08")
 PDB70_DB      = str(DATA_DIR / "pdb70" / "pdb70")
+SCOP_HHM_DB   = str(DATA_DIR / "scop_hhdb" / "scop_hhdb")  # HHsearch vs SCOPe ASTRAL 95%
 HHBLITS       = "hhblits"
 HHSEARCH      = "hhsearch"
 
@@ -76,33 +77,67 @@ def run_hhblits(
 
     df = pd.DataFrame(hits)
 
-    # Annotate: SCOPe sccs (direct), CATH code, then infer sccs from CATH if missing
-    df["sccs"]      = df["pdb"].map(lambda x: lookup.pdb_to_sccs(x) or "")
-    df["cath_code"] = df["pdb"].map(lambda x: lookup.pdb_to_cath_code(x) or "")
+    # ── Step 3: HHsearch query profile vs SCOPe ASTRAL 95% for direct sccs ──
+    # This gives direct SCOPe classification (a.1.1.2 etc.) at twilight zone sensitivity
+    scop_hhr = tmp / "scop_result.hhr"
+    scop_db  = Path(SCOP_HHM_DB)
 
-    def _enrich_sccs(row):
-        sccs = row["sccs"]
+    sccs_map: dict[str, str] = {}   # pdb_hit_name -> sccs from SCOPe DB
+    if (scop_db.parent / (scop_db.name + "_a3m.ffdata")).exists():
+        cmd3 = (f"{HHSEARCH} -i {query_a3m} -d {SCOP_HHM_DB} "
+                f"-o {scop_hhr} -cpu {threads} -v 0 -p 20 -z 250 -b 250")
+        r3 = subprocess.run(cmd3, shell=True, capture_output=True, text=True)
+        if r3.returncode == 0 and scop_hhr.exists():
+            scop_hits = _parse_hhr(scop_hhr)
+            for sh in scop_hits:
+                # SCOPe domain ID is in hit_name: e.g. "d1hbra_"
+                # Parse sccs from the domain ID via lookup
+                dom = sh.get("hit_name", "")
+                sccs = lookup.all_domains().get(dom, {}).get("sccs", "")
+                if not sccs and len(dom) >= 5 and dom[0] == "d":
+                    # Try looking up by PDB code
+                    sccs = lookup.pdb_to_sccs(dom[1:5])
+                if sccs:
+                    # Key by query region (qstart-qend) so we can match to PDB70 hits
+                    key = f"{sh['qstart']}-{sh['qend']}"
+                    if key not in sccs_map:
+                        sccs_map[key] = sccs
+
+    # ── Annotate PDB70 hits with best available SCOPe sccs ──────────────────
+    # Priority: 1) direct PDB→SCOPe, 2) SCOPe HHsearch by region, 3) CATH crosswalk
+    CATH_NAMES = {"1":"mainly alpha","2":"mainly beta","3":"alpha/beta","4":"few secondary"}
+
+    def _best_sccs(row) -> tuple[str, str, str]:
+        pdb = str(row.get("pdb", ""))
+        qs  = int(row.get("qstart", 0))
+        qe  = int(row.get("qend", 0))
+
+        # 1. Direct PDB→SCOPe lookup
+        sccs = lookup.pdb_to_sccs(pdb) or ""
         if sccs:
             return sccs, SCOP_CLASS_NAMES.get(sccs[0], "—"), "direct"
-        cc = row["cath_code"]
+
+        # 2. SCOPe HHsearch result for overlapping region
+        key = f"{qs}-{qe}"
+        sccs = sccs_map.get(key, "")
+        if sccs:
+            return sccs, SCOP_CLASS_NAMES.get(sccs[0], "—"), "hhsearch_scop"
+
+        # 3. CATH crosswalk fallback
+        cc = lookup.pdb_to_cath_code(pdb) or ""
         if cc:
             from db.lookup import cath_code_to_scop_class
             cls = cath_code_to_scop_class(cc)
             if cls:
-                # ~cls means inferred from CATH, not a direct SCOPe hit
-                CATH_CLASS_NAMES = {
-                    "1": "Mainly alpha (CATH inferred)",
-                    "2": "Mainly beta (CATH inferred)",
-                    "3": "Alpha/beta (CATH inferred)",
-                    "4": "Few secondary (CATH inferred)",
-                }
-                return f"~{cls}", CATH_CLASS_NAMES.get(cls, "CATH inferred"), "cath_inferred"
+                return f"~{cls}", CATH_NAMES.get(cls, "CATH inferred"), "cath_inferred"
+
         return "?", "not in SCOPe or CATH", "unknown"
 
-    enriched = df.apply(_enrich_sccs, axis=1, result_type="expand")
+    enriched = df.apply(_best_sccs, axis=1, result_type="expand")
     df["sccs"]        = enriched[0]
     df["class_name"]  = enriched[1]
-    df["sccs_source"] = enriched[2]   # 'direct' | 'cath_inferred' | 'unknown'
+    df["sccs_source"] = enriched[2]
+    df["cath_code"]   = df["pdb"].map(lambda x: lookup.pdb_to_cath_code(x) or "—")
 
     return df, None
 
