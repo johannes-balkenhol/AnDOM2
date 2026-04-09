@@ -119,38 +119,38 @@ def _seg(df, seq_len, arm, mode):
     ARM_C  = {"seq":"#3B82F6","str":"#0F6E56","hh":"#7F77DD"}
     for _, row in df.iterrows():
         qs=int(row.get("qstart",0)); qe=int(row.get("qend",0))
-        l=(qs/seq_len)*100; w=max(((qe-qs)/seq_len)*100,2); rng=f"{qs}\u2013{qe}"
+        l=(qs/seq_len)*100; w=max(((qe-qs)/seq_len)*100,2); rng=f"{qs}–{qe}"
         if mode=="scope":
             if arm=="seq":
                 cls=lk.get(str(row["target"]),{}).get("cls","?"); sccs=lk.get(str(row["target"]),{}).get("sccs","?")
-                c=SCOP_COLORS.get(cls,"#888"); o=0.9; lbl=f"{sccs}\u00b7{rng}"; tip=f"{row['target']} | {sccs} | e={fmt_e(row['evalue'])} | {rng}"
+                c=SCOP_COLORS.get(cls,"#888"); o=0.9; lbl=f"{sccs}·{rng}"; tip=f"{row['target']} | {sccs} | e={fmt_e(row['evalue'])} | {rng}"
             elif arm=="str":
                 cc=get_cath_code(str(row["target"])); cls=cath_code_to_scop_class(cc) if cc else "?"
-                c=SCOP_COLORS.get(cls,"#888"); o=0.85; lbl=f"{cls}\u00b7{rng}"; tip=f"SCOPe class {cls} via CATH:{cc} | lDDT={float(row.get('lddt',0)):.2f} | {rng}"
+                c=SCOP_COLORS.get(cls,"#888"); o=0.85; lbl=f"{cls}·{rng}"; tip=f"SCOPe class {cls} via CATH:{cc} | lDDT={float(row.get('lddt',0)):.2f} | {rng}"
             else:
-                sccs=str(row.get("sccs","\u2014")); cls=sccs[0] if sccs not in ("\u2014","?","") else "?"
+                sccs=str(row.get("sccs","—")); cls=sccs[0] if sccs not in ("—","?","") else "?"
                 prob=float(row.get("prob",50))/100; c=SCOP_COLORS.get(cls,"#888"); o=0.35+0.65*prob
-                lbl=f"{sccs}\u00b7{rng}"; tip=f"{row.get('hit_name','')} | {sccs} | prob={float(row.get('prob',0)):.0f}% | {rng}"
+                lbl=f"{sccs}·{rng}"; tip=f"{row.get('hit_name','')} | {sccs} | prob={float(row.get('prob',0)):.0f}% | {rng}"
         elif mode=="cath":
             if arm=="str":
                 cc=get_cath_code(str(row["target"])); lddt=float(row.get("lddt",0.7))
                 c=CATH_C.get(cc.split(".")[0] if cc else "?","#888"); o=0.5+0.5*lddt
             elif arm=="hh":
-                cc=str(row.get("cath_code","\u2014")); prob=float(row.get("prob",50))/100
-                c=CATH_C.get(cc.split(".")[0] if cc and cc!="\u2014" else "?","#888"); o=0.35+0.65*prob
+                cc=str(row.get("cath_code","—")); prob=float(row.get("prob",50))/100
+                c=CATH_C.get(cc.split(".")[0] if cc and cc!="—" else "?","#888"); o=0.35+0.65*prob
             else:
                 cc=get_cath_code(str(row["target"])); c=CATH_C.get(cc.split(".")[0] if cc else "?","#888"); o=0.9
-            lbl=f"{cc}\u00b7{rng}" if cc and cc!="\u2014" else rng; tip=f"CATH:{cc} | {rng}"
+            lbl=f"{cc}·{rng}" if cc and cc!="—" else rng; tip=f"CATH:{cc} | {rng}"
         else:
             if arm=="seq":
                 pdb=pdb_from_scope(str(row["target"])); o=0.85
-                lbl=f"{pdb.upper()}\u00b7{rng}"; tip=f"{pdb.upper()} | e={fmt_e(row['evalue'])} | {float(row.get('pident',0)):.0f}%id | {rng}"
+                lbl=f"{pdb.upper()}·{rng}"; tip=f"{pdb.upper()} | e={fmt_e(row['evalue'])} | {float(row.get('pident',0)):.0f}%id | {rng}"
             elif arm=="str":
                 pdb=str(row["target"])[:4].lower(); lddt=float(row.get("lddt",0.7)); o=0.5+0.5*lddt
-                lbl=f"{pdb.upper()}\u00b7{rng}"; tip=f"{pdb.upper()} | lDDT={lddt:.2f} | {rng}"
+                lbl=f"{pdb.upper()}·{rng}"; tip=f"{pdb.upper()} | lDDT={lddt:.2f} | {rng}"
             else:
                 pdb=str(row.get("pdb","")); prob=float(row.get("prob",50))/100; o=0.35+0.65*prob
-                lbl=f"{str(row.get('hit_name',pdb))[:8]}\u00b7{rng}"; tip=f"{row.get('hit_name',pdb)} | prob={float(row.get('prob',0)):.0f}% | {rng}"
+                lbl=f"{str(row.get('hit_name',pdb))[:8]}·{rng}"; tip=f"{row.get('hit_name',pdb)} | prob={float(row.get('prob',0)):.0f}% | {rng}"
             c=ARM_C[arm]
         segs.append({"l":l,"w":w,"c":c,"o":o,"label":lbl,"tip":tip})
     return segs
@@ -183,68 +183,68 @@ def render_compact_summary(df_seq, df_str, df_hh, fused, seq_len):
     lc1.markdown('<span style="font-size:11px;color:#888">SCOPe</span>', unsafe_allow_html=True)
     with sc1:
         if df_seq is not None and len(df_seq)>0:
-            r=df_seq.iloc[0]; sccs=lk.get(str(r["target"]),{}).get("sccs","\u2014"); cls=lk.get(str(r["target"]),{}).get("cls","?"); col=SCOP_COLORS.get(cls,"#888"); rng=f"{int(r.get('qstart',0))}\u2013{int(r.get('qend',0))} aa"
-            st.markdown(f'<span style="color:{col}">\u25cf</span> `{sccs}`<br><span style="font-size:11px;color:#888">{SCOP_CLASSES.get(cls,cls)} \u00b7 {rng}</span>', unsafe_allow_html=True)
-        else: st.caption("\u2014")
+            r=df_seq.iloc[0]; sccs=lk.get(str(r["target"]),{}).get("sccs","—"); cls=lk.get(str(r["target"]),{}).get("cls","?"); col=SCOP_COLORS.get(cls,"#888"); rng=f"{int(r.get('qstart',0))}–{int(r.get('qend',0))} aa"
+            st.markdown(f'<span style="color:{col}">●</span> `{sccs}`<br><span style="font-size:11px;color:#888">{SCOP_CLASSES.get(cls,cls)} · {rng}</span>', unsafe_allow_html=True)
+        else: st.caption("—")
     with tc1:
         if df_str is not None and len(df_str)>0:
-            r=df_str.iloc[0]; cc=get_cath_code(str(r["target"])); cls=cath_code_to_scop_class(cc) if cc else "?"; col=SCOP_COLORS.get(cls,"#888"); rng=f"{int(r.get('qstart',0))}\u2013{int(r.get('qend',0))} aa"; lc=lddt_color(float(r.get("lddt",0)))
-            st.markdown(f'<span style="color:{col}">\u25cf</span> class `{cls}`<br><span style="font-size:11px;color:#888">{SCOP_CLASSES.get(cls,cls)} \u00b7 {rng} \u00b7 </span><span style="font-size:11px;color:{lc}">lDDT={float(r.get("lddt",0)):.2f}</span>', unsafe_allow_html=True)
-        else: st.caption("\u2014")
+            r=df_str.iloc[0]; cc=get_cath_code(str(r["target"])); cls=cath_code_to_scop_class(cc) if cc else "?"; col=SCOP_COLORS.get(cls,"#888"); rng=f"{int(r.get('qstart',0))}–{int(r.get('qend',0))} aa"; lc=lddt_color(float(r.get("lddt",0)))
+            st.markdown(f'<span style="color:{col}">●</span> class `{cls}`<br><span style="font-size:11px;color:#888">{SCOP_CLASSES.get(cls,cls)} · {rng} · </span><span style="font-size:11px;color:{lc}">lDDT={float(r.get("lddt",0)):.2f}</span>', unsafe_allow_html=True)
+        else: st.caption("—")
     with pc1:
         if df_hh is not None and len(df_hh)>0:
-            r=df_hh.iloc[0]; sccs=str(r.get("sccs","\u2014")); cls=sccs[0] if sccs not in ("\u2014","?","") else "?"; col=SCOP_COLORS.get(cls,"#888"); rng=f"{int(r.get('qstart',0))}\u2013{int(r.get('qend',0))} aa"
-            st.markdown(f'<span style="color:{col}">\u25cf</span> `{sccs}`<br><span style="font-size:11px;color:#888">{SCOP_CLASSES.get(cls,cls)} \u00b7 {rng} \u00b7 prob={float(r.get("prob",0)):.0f}%</span>', unsafe_allow_html=True)
-        else: st.caption("\u2014")
+            r=df_hh.iloc[0]; sccs=str(r.get("sccs","—")); cls=sccs[0] if sccs not in ("—","?","") else "?"; col=SCOP_COLORS.get(cls,"#888"); rng=f"{int(r.get('qstart',0))}–{int(r.get('qend',0))} aa"
+            st.markdown(f'<span style="color:{col}">●</span> `{sccs}`<br><span style="font-size:11px;color:#888">{SCOP_CLASSES.get(cls,cls)} · {rng} · prob={float(r.get("prob",0)):.0f}%</span>', unsafe_allow_html=True)
+        else: st.caption("—")
     # CATH row
     lc2,sc2,tc2,pc2 = st.columns([1,2,2,2])
     lc2.markdown('<span style="font-size:11px;color:#888">CATH</span>', unsafe_allow_html=True)
     with sc2:
         if df_seq is not None and len(df_seq)>0:
-            r=df_seq.iloc[0]; cc=get_cath_code(str(r["target"])); rng=f"{int(r.get('qstart',0))}\u2013{int(r.get('qend',0))} aa"; url=f"https://www.cathdb.info/version/v4_3_0/superfamily/{cc}" if cc else "#"
-            st.markdown(f'[`{cc or "\u2014"}`]({url})<br><span style="font-size:11px;color:#888">{rng}</span>', unsafe_allow_html=True)
-        else: st.caption("\u2014")
+            r=df_seq.iloc[0]; cc=get_cath_code(str(r["target"])); rng=f"{int(r.get('qstart',0))}–{int(r.get('qend',0))} aa"; url=f"https://www.cathdb.info/version/v4_3_0/superfamily/{cc}" if cc else "#"
+            st.markdown(f'[`{cc or "—"}`]({url})<br><span style="font-size:11px;color:#888">{rng}</span>', unsafe_allow_html=True)
+        else: st.caption("—")
     with tc2:
         if df_str is not None and len(df_str)>0:
-            r=df_str.iloc[0]; cc=get_cath_code(str(r["target"])); rng=f"{int(r.get('qstart',0))}\u2013{int(r.get('qend',0))} aa"; url=f"https://www.cathdb.info/version/v4_3_0/superfamily/{cc}" if cc else "#"
-            st.markdown(f'[`{cc or "\u2014"}`]({url})<br><span style="font-size:11px;color:#888">{rng}</span>', unsafe_allow_html=True)
-        else: st.caption("\u2014")
+            r=df_str.iloc[0]; cc=get_cath_code(str(r["target"])); rng=f"{int(r.get('qstart',0))}–{int(r.get('qend',0))} aa"; url=f"https://www.cathdb.info/version/v4_3_0/superfamily/{cc}" if cc else "#"
+            st.markdown(f'[`{cc or "—"}`]({url})<br><span style="font-size:11px;color:#888">{rng}</span>', unsafe_allow_html=True)
+        else: st.caption("—")
     with pc2:
         if df_hh is not None and len(df_hh)>0:
-            r=df_hh.iloc[0]; cc=str(r.get("cath_code","\u2014")); rng=f"{int(r.get('qstart',0))}\u2013{int(r.get('qend',0))} aa"; url=f"https://www.cathdb.info/version/v4_3_0/superfamily/{cc}" if cc and cc!="\u2014" else "#"
+            r=df_hh.iloc[0]; cc=str(r.get("cath_code","—")); rng=f"{int(r.get('qstart',0))}–{int(r.get('qend',0))} aa"; url=f"https://www.cathdb.info/version/v4_3_0/superfamily/{cc}" if cc and cc!="—" else "#"
             st.markdown(f'[`{cc}`]({url})<br><span style="font-size:11px;color:#888">{rng}</span>', unsafe_allow_html=True)
-        else: st.caption("\u2014")
+        else: st.caption("—")
     # PDB row
     lc3,sc3,tc3,pc3 = st.columns([1,2,2,2])
     lc3.markdown('<span style="font-size:11px;color:#888">PDB</span>', unsafe_allow_html=True)
     with sc3:
         if df_seq is not None and len(df_seq)>0:
-            r=df_seq.iloc[0]; pdb=pdb_from_scope(str(r["target"])); purl=str(r.get("PDB link",f"https://www.rcsb.org/structure/{pdb}")); rng=f"{int(r.get('qstart',0))}\u2013{int(r.get('qend',0))} aa"
-            st.markdown(f'[{pdb.upper()}]({purl})<br><span style="font-size:11px;color:#888">{rng} \u00b7 {float(r.get("pident",0)):.0f}%id</span>', unsafe_allow_html=True)
-        else: st.caption("\u2014")
+            r=df_seq.iloc[0]; pdb=pdb_from_scope(str(r["target"])); purl=str(r.get("PDB link",f"https://www.rcsb.org/structure/{pdb}")); rng=f"{int(r.get('qstart',0))}–{int(r.get('qend',0))} aa"
+            st.markdown(f'[{pdb.upper()}]({purl})<br><span style="font-size:11px;color:#888">{rng} · {float(r.get("pident",0)):.0f}%id</span>', unsafe_allow_html=True)
+        else: st.caption("—")
     with tc3:
         if df_str is not None and len(df_str)>0:
-            r=df_str.iloc[0]; pdb=str(r["target"])[:4].lower(); purl=str(r.get("PDB link",f"https://www.rcsb.org/structure/{pdb}")); rng=f"{int(r.get('qstart',0))}\u2013{int(r.get('qend',0))} aa"; lc=lddt_color(float(r.get("lddt",0)))
-            st.markdown(f'[{pdb.upper()}]({purl})<br><span style="font-size:11px;color:#888">{rng} \u00b7 </span><span style="font-size:11px;color:{lc}">lDDT={float(r.get("lddt",0)):.2f}</span>', unsafe_allow_html=True)
-        else: st.caption("\u2014")
+            r=df_str.iloc[0]; pdb=str(r["target"])[:4].lower(); purl=str(r.get("PDB link",f"https://www.rcsb.org/structure/{pdb}")); rng=f"{int(r.get('qstart',0))}–{int(r.get('qend',0))} aa"; lc=lddt_color(float(r.get("lddt",0)))
+            st.markdown(f'[{pdb.upper()}]({purl})<br><span style="font-size:11px;color:#888">{rng} · </span><span style="font-size:11px;color:{lc}">lDDT={float(r.get("lddt",0)):.2f}</span>', unsafe_allow_html=True)
+        else: st.caption("—")
     with pc3:
         if df_hh is not None and len(df_hh)>0:
-            r=df_hh.iloc[0]; pdb=str(r.get("pdb","")); purl=str(r.get("PDB link",f"https://www.rcsb.org/structure/{pdb}")); rng=f"{int(r.get('qstart',0))}\u2013{int(r.get('qend',0))} aa"
-            st.markdown(f'[{str(r.get("hit_name",pdb.upper()))}]({purl})<br><span style="font-size:11px;color:#888">{rng} \u00b7 prob={float(r.get("prob",0)):.0f}%</span>', unsafe_allow_html=True)
-        else: st.caption("\u2014")
+            r=df_hh.iloc[0]; pdb=str(r.get("pdb","")); purl=str(r.get("PDB link",f"https://www.rcsb.org/structure/{pdb}")); rng=f"{int(r.get('qstart',0))}–{int(r.get('qend',0))} aa"
+            st.markdown(f'[{str(r.get("hit_name",pdb.upper()))}]({purl})<br><span style="font-size:11px;color:#888">{rng} · prob={float(r.get("prob",0)):.0f}%</span>', unsafe_allow_html=True)
+        else: st.caption("—")
     # Ensemble verdict
     if not fused.empty:
         st.markdown("---")
         top=fused.iloc[0]; ev=top.get("evidence",""); votes=int(top.get("votes",0))
         conf_color={"all_three":"#1D9E75","two_arms":"#BA7517"}.get(ev,"#888780")
-        conf_label={"all_three":"All three arms agree \u2014 highest confidence","two_arms":"Two arms agree \u2014 high confidence","seq_only":"Sequence arm only","struct_only":"Structure arm only (dark proteome)","hhblits_only":"Profile arm only (twilight zone)"}.get(ev,ev)
-        agreed_sccs=top.get("agreed_sccs",top.get("sccs","\u2014")); agreed_cath=top.get("agreed_cath",top.get("cath_code","\u2014"))
+        conf_label={"all_three":"All three arms agree — highest confidence","two_arms":"Two arms agree — high confidence","seq_only":"Sequence arm only","struct_only":"Structure arm only (dark proteome)","hhblits_only":"Profile arm only (twilight zone)"}.get(ev,ev)
+        agreed_sccs=top.get("agreed_sccs",top.get("sccs","—")); agreed_cath=top.get("agreed_cath",top.get("cath_code","—"))
         score=float(top.get("ensemble_score",0)); arms_cls=top.get("arms_classes","")
         st.markdown(
             f'<div style="background:var(--color-background-secondary);border-left:5px solid {conf_color};border-radius:0 10px 10px 0;padding:14px 18px;margin-top:8px">'
-            f'<div style="font-weight:700;font-size:15px;color:{conf_color}">Ensemble: {votes}/3 votes \u00b7 {conf_label}</div>'
-            f'<div style="font-size:13px;margin-top:6px"><b>SCOPe consensus:</b> {agreed_sccs} &nbsp;\u00b7&nbsp; <b>CATH consensus:</b> {agreed_cath} &nbsp;\u00b7&nbsp; <b>Score:</b> {score:.3f}</div>'
-            f'<div style="font-size:11px;color:#888;margin-top:4px">Arm classes: {arms_cls} &nbsp;\u00b7&nbsp; Score = weighted e-value norm + class agreement bonus when \u22652 arms agree</div>'
+            f'<div style="font-weight:700;font-size:15px;color:{conf_color}">Ensemble: {votes}/3 votes · {conf_label}</div>'
+            f'<div style="font-size:13px;margin-top:6px"><b>SCOPe consensus:</b> {agreed_sccs} &nbsp;·&nbsp; <b>CATH consensus:</b> {agreed_cath} &nbsp;·&nbsp; <b>Score:</b> {score:.3f}</div>'
+            f'<div style="font-size:11px;color:#888;margin-top:4px">Arm classes: {arms_cls} &nbsp;·&nbsp; Score = weighted e-value norm + class agreement bonus when ≥2 arms agree</div>'
             f'</div>', unsafe_allow_html=True)
     # Functional annotation
     top_pdb=""
@@ -253,14 +253,14 @@ def render_compact_summary(df_seq, df_str, df_hh, fused, seq_len):
         if not top_pdb: top_pdb=str(fused.iloc[0].get("hh_hit",""))[:4].lower()
     if top_pdb and len(top_pdb)==4:
         st.markdown(f'<div style="font-size:11px;color:#888;margin:8px 0 2px">Functional annotation for top ensemble hit ({top_pdb.upper()})</div>', unsafe_allow_html=True)
-        with st.expander(f"Load UniProt \u00b7 Pfam \u00b7 AlphaFold structure \u2014 {top_pdb.upper()}", expanded=False):
-            with st.spinner(f"Fetching {top_pdb.upper()}\u2026"):
+        with st.expander(f"Load UniProt · Pfam · AlphaFold structure — {top_pdb.upper()}", expanded=False):
+            with st.spinner(f"Fetching {top_pdb.upper()}…"):
                 info=fetch_pdb_function(top_pdb)
             if info.get("uniprot_id"):
                 uid=info["uniprot_id"]
-                st.markdown(f'**UniProt:** [{uid}](https://www.uniprot.org/uniprot/{uid}) &nbsp;\u00b7&nbsp; **Gene:** {info.get("gene","\u2014")} &nbsp;\u00b7&nbsp; **Organism:** {info.get("organism","\u2014")}')
+                st.markdown(f'**UniProt:** [{uid}](https://www.uniprot.org/uniprot/{uid}) &nbsp;·&nbsp; **Gene:** {info.get("gene","—")} &nbsp;·&nbsp; **Organism:** {info.get("organism","—")}')
                 if info.get("function"): st.markdown(f'_{info["function"][:400]}_')
-                if info.get("pfam"): st.markdown("**Pfam:** " + " \u00b7 ".join(f'`{p["pfam_id"]}` {p["name"]}' for p in info["pfam"][:4]))
+                if info.get("pfam"): st.markdown("**Pfam:** " + " · ".join(f'`{p["pfam_id"]}` {p["name"]}' for p in info["pfam"][:4]))
                 st.markdown(f'<iframe src="https://alphafold.ebi.ac.uk/entry/{uid}" width="100%" height="500" style="border:none;border-radius:8px;margin-top:8px" title="AlphaFold {uid}"></iframe>', unsafe_allow_html=True)
             else:
                 st.caption(f"No UniProt mapping for {top_pdb.upper()}.")
