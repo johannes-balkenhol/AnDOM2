@@ -105,7 +105,9 @@ def compact_domain_bar(df_seq, df_str, df_hh, seq_len: int) -> str:
             left  = (row["qstart"] / seq_len) * 100
             width = max(((row["qend"] - row["qstart"]) / seq_len) * 100, 2)
             tip   = f"{row['target']} | {sccs} | e={float(row['evalue']):.1e}"
-            lbl   = f'<span style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:10px;color:white;font-weight:500;white-space:nowrap;overflow:hidden;max-width:90%;text-overflow:ellipsis">{sccs}</span>' if width > 9 else ""
+            rng   = f"{int(row['qstart'])}–{int(row['qend'])}"
+            lbl_text = f"{sccs} · {rng}" if width > 12 else (sccs if width > 6 else "")
+            lbl   = f'<span style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:10px;color:white;font-weight:500;white-space:nowrap;overflow:hidden;max-width:94%;text-overflow:ellipsis">{lbl_text}</span>' if lbl_text else ""
             r1   += f'<div title="{tip}" style="position:absolute;top:0;left:{left:.1f}%;width:{width:.1f}%;height:100%;background:{color};opacity:0.9;border-radius:3px;border:1px solid rgba(255,255,255,0.5);overflow:hidden">{lbl}</div>'
     rows.append(("Seq", r1, "#3B82F6"))
 
@@ -120,7 +122,9 @@ def compact_domain_bar(df_seq, df_str, df_hh, seq_len: int) -> str:
             width = max(((row["qend"] - row["qstart"]) / seq_len) * 100, 2)
             cc    = get_cath_code(str(row["target"]))
             tip   = f"{row['target']} | CATH:{cc} | lDDT={lddt:.2f} | e={float(row['evalue']):.1e}"
-            lbl   = f'<span style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:10px;color:white;font-weight:500;white-space:nowrap;overflow:hidden;max-width:90%">{cc}</span>' if width > 9 and cc else ""
+            rng   = f"{int(row['qstart'])}–{int(row['qend'])}"
+            lbl_text = f"{cc} · {rng}" if width > 12 and cc else (cc if width > 6 and cc else "")
+            lbl   = f'<span style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:10px;color:white;font-weight:500;white-space:nowrap;overflow:hidden;max-width:94%">{lbl_text}</span>' if lbl_text else ""
             r2   += f'<div title="{tip}" style="position:absolute;top:0;left:{left:.1f}%;width:{width:.1f}%;height:100%;background:{color};opacity:0.85;border-radius:3px;border:1px solid rgba(255,255,255,0.4);overflow:hidden">{lbl}</div>'
     rows.append(("Struct", r2, "#0F6E56"))
 
@@ -134,7 +138,9 @@ def compact_domain_bar(df_seq, df_str, df_hh, seq_len: int) -> str:
             width = max(((row["qend"] - row["qstart"]) / seq_len) * 100, 2)
             sccs  = str(row.get("sccs", "—"))
             tip   = f"{row['hit_name']} | {sccs} | prob={float(row.get('prob',0)):.0f}% | e={float(row['evalue']):.1e}"
-            lbl   = f'<span style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:10px;color:white;font-weight:500;white-space:nowrap;overflow:hidden;max-width:90%">{sccs}</span>' if width > 9 and sccs not in ("—","?","") else ""
+            rng   = f"{int(row['qstart'])}–{int(row['qend'])}"
+            lbl_text = f"{sccs} · {rng}" if width > 12 and sccs not in ("—","?","") else (sccs if width > 6 and sccs not in ("—","?","") else "")
+            lbl   = f'<span style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:10px;color:white;font-weight:500;white-space:nowrap;overflow:hidden;max-width:94%">{lbl_text}</span>' if lbl_text else ""
             r3   += f'<div title="{tip}" style="position:absolute;top:0;left:{left:.1f}%;width:{width:.1f}%;height:100%;background:#7F77DD;opacity:{alpha:.2f};border-radius:3px;border:1px solid rgba(255,255,255,0.4);overflow:hidden">{lbl}</div>'
     rows.append(("Profile", r3, "#7F77DD"))
 
@@ -537,8 +543,8 @@ with page[0]:
                     cc1.metric("🟢 All three",n_all); cc2.metric("🟡 Two arms",n_two)
                     cc3.metric("🔵 Seq only",n_seq);  cc4.metric("🟠 Struct only",n_st); cc5.metric("🟣 Profile only",n_hh)
                     st.dataframe(
-                        fused[["rank","ev","scope_domain","sccs","cath_d","cath_code","hh_hit","votes","ensemble_score","seq_evalue","struct_evalue","hh_evalue","hh_prob","lddt"]
-                        ].rename(columns={"ev":"","scope_domain":"SCOPe domain","sccs":"SCOP class","cath_d":"CATH domain","cath_code":"CATH code","hh_hit":"HHblits hit","votes":"Votes","ensemble_score":"Score","seq_evalue":"Seq e-val","struct_evalue":"Struct e-val","hh_evalue":"HH e-val","hh_prob":"HH prob","lddt":"lDDT"}),
+                        fused[["rank","ev","scope_domain","sccs","cath_d","cath_code","hh_hit","votes","ensemble_score","qstart","qend","seq_evalue","struct_evalue","hh_evalue","hh_prob","lddt"]
+                        ].rename(columns={"ev":"","scope_domain":"SCOPe domain","sccs":"SCOP class","cath_d":"CATH domain","cath_code":"CATH code","hh_hit":"HHblits hit","votes":"Votes","ensemble_score":"Score","qstart":"Start aa","qend":"End aa","seq_evalue":"Seq e-val","struct_evalue":"Struct e-val","hh_evalue":"HH e-val","hh_prob":"HH prob","lddt":"lDDT"}),
                         use_container_width=True, hide_index=True,
                     )
                     st.download_button("Download TSV", fused.to_csv(sep="\t",index=False), file_name="AnDOM_results.tsv", mime="text/tab-separated-values")
