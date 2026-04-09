@@ -243,67 +243,209 @@ def render_compact_summary(df_seq, df_str, df_hh, fused, seq_len):
     lk = lookup.all_domains()
     from db.lookup import get_cath_code, cath_code_to_scop_class
     render_three_domain_maps(df_seq, df_str, df_hh, seq_len)
-    st.markdown("---")
-    st.markdown('<div style="font-size:13px;font-weight:500;margin-bottom:6px">Top-1 per arm and category</div>', unsafe_allow_html=True)
-    hc,sc,tc,pc = st.columns([1,2,2,2])
-    hc.markdown("")
-    sc.markdown('<span style="font-weight:600;color:#3B82F6;font-size:12px">Sequence arm</span>', unsafe_allow_html=True)
-    tc.markdown('<span style="font-weight:600;color:#0F6E56;font-size:12px">Structure arm</span>', unsafe_allow_html=True)
-    pc.markdown('<span style="font-weight:600;color:#7F77DD;font-size:12px">Profile arm</span>', unsafe_allow_html=True)
+    # ── Top-1 per arm and category ────────────────────────────────────────────
+    st.markdown('<div style="font-size:13px;font-weight:500;margin-bottom:10px">Top-1 per arm and category</div>', unsafe_allow_html=True)
+
+    from db.lookup import get_cath_code, cath_code_to_scop_class
+    CATH_NAMES_FULL = {
+        "1": "Mainly alpha",
+        "2": "Mainly beta",
+        "3": "Alpha/beta (mixed barrel)",
+        "4": "Few secondary structures",
+    }
+
+    def _hh_sccs_resolved(r):
+        """Return best sccs label for HHblits hit — fallback to CATH class name if ?."""
+        sccs = str(r.get("sccs","?"))
+        if sccs not in ("—","?",""):
+            return sccs, sccs[0]
+        cc = str(r.get("cath_code",""))
+        if cc and cc not in ("—","?",""):
+            c1  = cc.split(".")[0]
+            cls = {"1":"a","2":"b","3":"c","4":"g"}.get(c1,"?")
+            return f"CATH class {CATH_NAMES_FULL.get(c1, c1)}", cls
+        return "unknown (not in SCOPe ASTRAL)", "?"
+
+    # Column headers
+    hdr, sc, tc, pc = st.columns([1.1, 2.3, 2.3, 2.3])
+    hdr.markdown("")
+    sc.markdown('<b style="color:#3B82F6;font-size:12px">Sequence arm</b><br><span style="font-size:10px;color:#999">MMseqs2 vs SCOPe ASTRAL</span>', unsafe_allow_html=True)
+    tc.markdown('<b style="color:#0F6E56;font-size:12px">Structure arm</b><br><span style="font-size:10px;color:#999">ESMFold + Foldseek vs CATH50</span>', unsafe_allow_html=True)
+    pc.markdown('<b style="color:#7F77DD;font-size:12px">Profile arm</b><br><span style="font-size:10px;color:#999">HHblits + HHsearch vs PDB70</span>', unsafe_allow_html=True)
+
+    st.markdown('<div style="height:4px"></div>', unsafe_allow_html=True)
+
     # SCOPe row
-    lc1,sc1,tc1,pc1 = st.columns([1,2,2,2])
-    lc1.markdown('<span style="font-size:11px;color:#888">SCOPe</span>', unsafe_allow_html=True)
+    lc1, sc1, tc1, pc1 = st.columns([1.1, 2.3, 2.3, 2.3])
+    lc1.markdown('<div style="font-size:11px;color:#888;padding-top:6px">SCOPe class</div>', unsafe_allow_html=True)
     with sc1:
-        if df_seq is not None and len(df_seq)>0:
-            r=df_seq.iloc[0]; sccs=lk.get(str(r["target"]),{}).get("sccs","—"); cls=lk.get(str(r["target"]),{}).get("cls","?"); col=SCOP_COLORS.get(cls,"#888"); rng=f"{int(r.get('qstart',0))}–{int(r.get('qend',0))} aa"
-            st.markdown(f'<span style="color:{col}">●</span> `{sccs}`<br><span style="font-size:11px;color:#888">{SCOP_CLASSES.get(cls,cls)} · {rng}</span>', unsafe_allow_html=True)
-        else: st.caption("—")
+        if df_seq is not None and len(df_seq) > 0:
+            r = df_seq.iloc[0]
+            sccs = lk.get(str(r["target"]),{}).get("sccs","—")
+            cls  = lk.get(str(r["target"]),{}).get("cls","?")
+            col  = SCOP_COLORS.get(cls,"#888")
+            rng  = f"{int(r.get('qstart',0))}–{int(r.get('qend',0))} aa"
+            scope_url = f"https://scop.berkeley.edu/sunid={sccs}" if sccs != "—" else "#"
+            st.markdown(
+                f'<span style="color:{col};font-size:16px">●</span> '
+                f'<a href="{scope_url}" style="font-weight:600;font-size:13px">{sccs}</a><br>'
+                f'<span style="font-size:11px;color:#666">{SCOP_CLASSES.get(cls,cls)}</span><br>'
+                f'<span style="font-size:11px;color:#aaa">{rng} · e={fmt_e(r["evalue"])}</span>',
+                unsafe_allow_html=True
+            )
+        else:
+            st.caption("no sequence hits")
     with tc1:
-        if df_str is not None and len(df_str)>0:
-            r=df_str.iloc[0]; cc=get_cath_code(str(r["target"])); cls=cath_code_to_scop_class(cc) if cc else "?"; col=SCOP_COLORS.get(cls,"#888"); rng=f"{int(r.get('qstart',0))}–{int(r.get('qend',0))} aa"; lc=lddt_color(float(r.get("lddt",0)))
-            st.markdown(f'<span style="color:{col}">●</span> class `{cls}`<br><span style="font-size:11px;color:#888">{SCOP_CLASSES.get(cls,cls)} · {rng} · </span><span style="font-size:11px;color:{lc}">lDDT={float(r.get("lddt",0)):.2f}</span>', unsafe_allow_html=True)
-        else: st.caption("—")
+        if df_str is not None and len(df_str) > 0:
+            r   = df_str.iloc[0]
+            cc  = get_cath_code(str(r["target"]))
+            cls = cath_code_to_scop_class(cc) if cc else "?"
+            col = SCOP_COLORS.get(cls,"#888")
+            rng = f"{int(r.get('qstart',0))}–{int(r.get('qend',0))} aa"
+            lc  = lddt_color(float(r.get("lddt",0)))
+            st.markdown(
+                f'<span style="color:{col};font-size:16px">●</span> '
+                f'<span style="font-weight:600;font-size:13px">class {cls}</span><br>'
+                f'<span style="font-size:11px;color:#666">{SCOP_CLASSES.get(cls,cls)} (via CATH crosswalk)</span><br>'
+                f'<span style="font-size:11px;color:#aaa">{rng} · </span>'
+                f'<span style="font-size:11px;color:{lc}">lDDT={float(r.get("lddt",0)):.2f}</span>',
+                unsafe_allow_html=True
+            )
+        else:
+            st.caption("no structural hits")
     with pc1:
-        if df_hh is not None and len(df_hh)>0:
-            r=df_hh.iloc[0]; sccs=str(r.get("sccs","—")); cls=sccs[0] if sccs not in ("—","?","") else "?"; col=SCOP_COLORS.get(cls,"#888"); rng=f"{int(r.get('qstart',0))}–{int(r.get('qend',0))} aa"
-            st.markdown(f'<span style="color:{col}">●</span> `{sccs}`<br><span style="font-size:11px;color:#888">{SCOP_CLASSES.get(cls,cls)} · {rng} · prob={float(r.get("prob",0)):.0f}%</span>', unsafe_allow_html=True)
-        else: st.caption("—")
+        if df_hh is not None and len(df_hh) > 0:
+            r            = df_hh.iloc[0]
+            sccs_r, cls  = _hh_sccs_resolved(r)
+            col          = SCOP_COLORS.get(cls,"#888")
+            rng          = f"{int(r.get('qstart',0))}–{int(r.get('qend',0))} aa"
+            source       = str(r.get("sccs_source",""))
+            if source == "cath_inferred":
+                note = '<br><span style="font-size:10px;color:#BA7517">~ class inferred from CATH (not in SCOPe ASTRAL)</span>'
+            elif source == "unknown":
+                note = '<br><span style="font-size:10px;color:#A32D2D">not in SCOPe or CATH — novel fold?</span>'
+            else:
+                note = ""
+            st.markdown(
+                f'<span style="color:{col};font-size:16px">●</span> '
+                f'<span style="font-weight:600;font-size:13px">{sccs_r}</span><br>'
+                f'<span style="font-size:11px;color:#666">{SCOP_CLASSES.get(cls,cls)}</span>'
+                f'{note}<br>'
+                f'<span style="font-size:11px;color:#aaa">{rng} · prob={float(r.get("prob",0)):.0f}%</span>',
+                unsafe_allow_html=True
+            )
+        else:
+            st.caption("deep search off or no hits")
+
+    st.markdown('<div style="height:8px"></div>', unsafe_allow_html=True)
+
     # CATH row
-    lc2,sc2,tc2,pc2 = st.columns([1,2,2,2])
-    lc2.markdown('<span style="font-size:11px;color:#888">CATH</span>', unsafe_allow_html=True)
+    lc2, sc2, tc2, pc2 = st.columns([1.1, 2.3, 2.3, 2.3])
+    lc2.markdown('<div style="font-size:11px;color:#888;padding-top:6px">CATH code</div>', unsafe_allow_html=True)
     with sc2:
-        if df_seq is not None and len(df_seq)>0:
-            r=df_seq.iloc[0]; cc=get_cath_code(str(r["target"])); rng=f"{int(r.get('qstart',0))}–{int(r.get('qend',0))} aa"; url=f"https://www.cathdb.info/version/v4_3_0/superfamily/{cc}" if cc else "#"
-            st.markdown(f'[`{cc or "—"}`]({url})<br><span style="font-size:11px;color:#888">{rng}</span>', unsafe_allow_html=True)
-        else: st.caption("—")
+        if df_seq is not None and len(df_seq) > 0:
+            r   = df_seq.iloc[0]
+            cc  = get_cath_code(str(r["target"]))
+            rng = f"{int(r.get('qstart',0))}–{int(r.get('qend',0))} aa"
+            url = f"https://www.cathdb.info/version/v4_3_0/superfamily/{cc}" if cc else "#"
+            c1  = cc.split(".")[0] if cc else "?"
+            st.markdown(
+                f'<a href="{url}" style="font-weight:600;font-size:13px">{cc or "—"}</a><br>'
+                f'<span style="font-size:11px;color:#666">{CATH_NAMES_FULL.get(c1,"—")}</span><br>'
+                f'<span style="font-size:11px;color:#aaa">{rng}</span>',
+                unsafe_allow_html=True
+            )
+        else:
+            st.caption("—")
     with tc2:
-        if df_str is not None and len(df_str)>0:
-            r=df_str.iloc[0]; cc=get_cath_code(str(r["target"])); rng=f"{int(r.get('qstart',0))}–{int(r.get('qend',0))} aa"; url=f"https://www.cathdb.info/version/v4_3_0/superfamily/{cc}" if cc else "#"
-            st.markdown(f'[`{cc or "—"}`]({url})<br><span style="font-size:11px;color:#888">{rng}</span>', unsafe_allow_html=True)
-        else: st.caption("—")
+        if df_str is not None and len(df_str) > 0:
+            r   = df_str.iloc[0]
+            cc  = get_cath_code(str(r["target"]))
+            rng = f"{int(r.get('qstart',0))}–{int(r.get('qend',0))} aa"
+            url = f"https://www.cathdb.info/version/v4_3_0/superfamily/{cc}" if cc else "#"
+            c1  = cc.split(".")[0] if cc else "?"
+            st.markdown(
+                f'<a href="{url}" style="font-weight:600;font-size:13px">{cc or "—"}</a><br>'
+                f'<span style="font-size:11px;color:#666">{CATH_NAMES_FULL.get(c1,"—")}</span><br>'
+                f'<span style="font-size:11px;color:#aaa">{rng}</span>',
+                unsafe_allow_html=True
+            )
+        else:
+            st.caption("—")
     with pc2:
-        if df_hh is not None and len(df_hh)>0:
-            r=df_hh.iloc[0]; cc=str(r.get("cath_code","—")); rng=f"{int(r.get('qstart',0))}–{int(r.get('qend',0))} aa"; url=f"https://www.cathdb.info/version/v4_3_0/superfamily/{cc}" if cc and cc!="—" else "#"
-            st.markdown(f'[`{cc}`]({url})<br><span style="font-size:11px;color:#888">{rng}</span>', unsafe_allow_html=True)
-        else: st.caption("—")
+        if df_hh is not None and len(df_hh) > 0:
+            r   = df_hh.iloc[0]
+            cc  = str(r.get("cath_code","—"))
+            rng = f"{int(r.get('qstart',0))}–{int(r.get('qend',0))} aa"
+            url = f"https://www.cathdb.info/version/v4_3_0/superfamily/{cc}" if cc and cc not in ("—","?") else "#"
+            c1  = cc.split(".")[0] if cc and cc not in ("—","?") else "?"
+            st.markdown(
+                f'<a href="{url}" style="font-weight:600;font-size:13px">{cc}</a><br>'
+                f'<span style="font-size:11px;color:#666">{CATH_NAMES_FULL.get(c1,"—")}</span><br>'
+                f'<span style="font-size:11px;color:#aaa">{rng}</span>',
+                unsafe_allow_html=True
+            )
+        else:
+            st.caption("—")
+
+    st.markdown('<div style="height:8px"></div>', unsafe_allow_html=True)
+
     # PDB row
-    lc3,sc3,tc3,pc3 = st.columns([1,2,2,2])
-    lc3.markdown('<span style="font-size:11px;color:#888">PDB</span>', unsafe_allow_html=True)
+    lc3, sc3, tc3, pc3 = st.columns([1.1, 2.3, 2.3, 2.3])
+    lc3.markdown('<div style="font-size:11px;color:#888;padding-top:6px">PDB top hit</div>', unsafe_allow_html=True)
     with sc3:
-        if df_seq is not None and len(df_seq)>0:
-            r=df_seq.iloc[0]; pdb=pdb_from_scope(str(r["target"])); purl=str(r.get("PDB link",f"https://www.rcsb.org/structure/{pdb}")); rng=f"{int(r.get('qstart',0))}–{int(r.get('qend',0))} aa"
-            st.markdown(f'[{pdb.upper()}]({purl})<br><span style="font-size:11px;color:#888">{rng} · {float(r.get("pident",0)):.0f}%id</span>', unsafe_allow_html=True)
-        else: st.caption("—")
+        if df_seq is not None and len(df_seq) > 0:
+            r   = df_seq.iloc[0]
+            pdb = pdb_from_scope(str(r["target"]))
+            purl= str(r.get("PDB link", f"https://www.rcsb.org/structure/{pdb}"))
+            rng = f"{int(r.get('qstart',0))}–{int(r.get('qend',0))} aa"
+            desc= lk.get(str(r["target"]),{}).get("desc","")[:50]
+            st.markdown(
+                f'<a href="{purl}" style="font-weight:600;font-size:14px">{pdb.upper()}</a><br>'
+                f'<span style="font-size:11px;color:#666">{desc}</span><br>'
+                f'<span style="font-size:11px;color:#aaa">{rng} · {float(r.get("pident",0)):.0f}%id · e={fmt_e(r["evalue"])}</span>',
+                unsafe_allow_html=True
+            )
+        else:
+            st.caption("—")
     with tc3:
-        if df_str is not None and len(df_str)>0:
-            r=df_str.iloc[0]; pdb=str(r["target"])[:4].lower(); purl=str(r.get("PDB link",f"https://www.rcsb.org/structure/{pdb}")); rng=f"{int(r.get('qstart',0))}–{int(r.get('qend',0))} aa"; lc=lddt_color(float(r.get("lddt",0)))
-            st.markdown(f'[{pdb.upper()}]({purl})<br><span style="font-size:11px;color:#888">{rng} · </span><span style="font-size:11px;color:{lc}">lDDT={float(r.get("lddt",0)):.2f}</span>', unsafe_allow_html=True)
-        else: st.caption("—")
+        if df_str is not None and len(df_str) > 0:
+            r    = df_str.iloc[0]
+            pdb  = str(r["target"])[:4].lower()
+            purl = str(r.get("PDB link", f"https://www.rcsb.org/structure/{pdb}"))
+            rng  = f"{int(r.get('qstart',0))}–{int(r.get('qend',0))} aa"
+            lddt = float(r.get("lddt",0))
+            lc   = lddt_color(lddt)
+            desc = str(r.get("target",""))
+            st.markdown(
+                f'<a href="{purl}" style="font-weight:600;font-size:14px">{pdb.upper()}</a><br>'
+                f'<span style="font-size:11px;color:#666">{desc}</span><br>'
+                f'<span style="font-size:11px;color:#aaa">{rng} · e={fmt_e(r["evalue"])} · </span>'
+                f'<span style="font-size:11px;color:{lc}">lDDT={lddt:.2f}</span>',
+                unsafe_allow_html=True
+            )
+        else:
+            st.caption("—")
     with pc3:
-        if df_hh is not None and len(df_hh)>0:
-            r=df_hh.iloc[0]; pdb=str(r.get("pdb","")); purl=str(r.get("PDB link",f"https://www.rcsb.org/structure/{pdb}")); rng=f"{int(r.get('qstart',0))}–{int(r.get('qend',0))} aa"
-            st.markdown(f'[{str(r.get("hit_name",pdb.upper()))}]({purl})<br><span style="font-size:11px;color:#888">{rng} · prob={float(r.get("prob",0)):.0f}%</span>', unsafe_allow_html=True)
-        else: st.caption("—")
+        if df_hh is not None and len(df_hh) > 0:
+            r    = df_hh.iloc[0]
+            pdb  = str(r.get("pdb",""))
+            purl = str(r.get("PDB link", f"https://www.rcsb.org/structure/{pdb}"))
+            rng  = f"{int(r.get('qstart',0))}–{int(r.get('qend',0))} aa"
+            name = str(r.get("hit_name", pdb.upper()))
+            st.markdown(
+                f'<a href="{purl}" style="font-weight:600;font-size:14px">{name}</a><br>'
+                f'<span style="font-size:11px;color:#666">PDB70 hit</span><br>'
+                f'<span style="font-size:11px;color:#aaa">{rng} · prob={float(r.get("prob",0)):.0f}% · e={fmt_e(r["evalue"])}</span>',
+                unsafe_allow_html=True
+            )
+        else:
+            st.caption("—")
+
+    st.markdown('<div style="height:4px"></div>', unsafe_allow_html=True)
+    st.caption("Each arm searches a different database — PDB IDs may differ but represent the same fold. Ensemble matches by query region overlap.")
+
+
     # Ensemble verdict
     if not fused.empty:
         st.markdown("---")

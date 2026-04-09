@@ -76,12 +76,33 @@ def run_hhblits(
 
     df = pd.DataFrame(hits)
 
-    # Annotate each hit with SCOPe sccs and CATH code via fast PDB lookups
-    df["sccs"]       = df["pdb"].map(lambda x: lookup.pdb_to_sccs(x) or "—")
-    df["class_name"] = df["sccs"].map(
-        lambda x: SCOP_CLASS_NAMES.get(x[0], "—") if x and x not in ("—", "?") else "—"
-    )
-    df["cath_code"]  = df["pdb"].map(lambda x: lookup.pdb_to_cath_code(x) or "—")
+    # Annotate: SCOPe sccs (direct), CATH code, then infer sccs from CATH if missing
+    df["sccs"]      = df["pdb"].map(lambda x: lookup.pdb_to_sccs(x) or "")
+    df["cath_code"] = df["pdb"].map(lambda x: lookup.pdb_to_cath_code(x) or "")
+
+    def _enrich_sccs(row):
+        sccs = row["sccs"]
+        if sccs:
+            return sccs, SCOP_CLASS_NAMES.get(sccs[0], "—"), "direct"
+        cc = row["cath_code"]
+        if cc:
+            from db.lookup import cath_code_to_scop_class
+            cls = cath_code_to_scop_class(cc)
+            if cls:
+                # ~cls means inferred from CATH, not a direct SCOPe hit
+                CATH_CLASS_NAMES = {
+                    "1": "Mainly alpha (CATH inferred)",
+                    "2": "Mainly beta (CATH inferred)",
+                    "3": "Alpha/beta (CATH inferred)",
+                    "4": "Few secondary (CATH inferred)",
+                }
+                return f"~{cls}", CATH_CLASS_NAMES.get(cls, "CATH inferred"), "cath_inferred"
+        return "?", "not in SCOPe or CATH", "unknown"
+
+    enriched = df.apply(_enrich_sccs, axis=1, result_type="expand")
+    df["sccs"]        = enriched[0]
+    df["class_name"]  = enriched[1]
+    df["sccs_source"] = enriched[2]   # 'direct' | 'cath_inferred' | 'unknown'
 
     return df, None
 
