@@ -280,25 +280,52 @@ def fuse_results_three(
                 if best_hh is None or hh["evalue"] < best_hh["evalue"]:
                     best_hh = hh
 
-        # voting
+        # ── voting ────────────────────────────────────────────────────────────
+        from db.lookup import cath_code_to_scop_class
         votes = 1
-        arms  = [sh["sccs"][0] if sh["sccs"] not in ("—","?","") else "?"]
         score = w_seq * seq_norm.get(sh["domain"], 0)
+
+        seq_cls  = sh["sccs"][0] if sh["sccs"] not in ("—","?","") else "?"
+        seq_cath = sh["cath_code"] or ""
+        seq_pdb  = sh["domain"][1:5].lower() if len(sh["domain"]) >= 5 else ""
+        arm_classes = [seq_cls]
+        arm_caths   = [seq_cath]
+        arm_pdbs    = [seq_pdb]
 
         if best_st:
             matched_struct.add(best_st["domain"])
             votes += 1
             score += w_struct * struct_norm.get(best_st["domain"], 0)
-            # struct arm sccs via CATH crosswalk
-            from db.lookup import cath_code_to_scop_class
-            st_cls = cath_code_to_scop_class(best_st["cath_code"])
-            arms.append(st_cls if st_cls else "?")
+            st_cls = cath_code_to_scop_class(best_st["cath_code"]) or "?"
+            arm_classes.append(st_cls)
+            arm_caths.append(best_st["cath_code"] or "")
+            arm_pdbs.append(best_st["domain"][:4].lower())
 
         if best_hh:
             matched_hh.add(best_hh["domain"])
             votes += 1
             score += w_hh * hh_norm.get(best_hh["domain"], 0)
-            arms.append(best_hh["sccs"][0] if best_hh["sccs"] not in ("—","?","") else "?")
+            hh_cls = best_hh["sccs"][0] if best_hh["sccs"] not in ("—","?","") else "?"
+            arm_classes.append(hh_cls)
+            arm_caths.append(best_hh.get("cath_code", "") or "")
+            arm_pdbs.append(best_hh["pdb"][:4].lower() if best_hh.get("pdb") else "")
+
+        # Class agreement bonus (+0.2 if majority agree on same SCOPe class letter)
+        valid_cls = [c for c in arm_classes if c != "?"]
+        if valid_cls:
+            most_common_cls = max(set(valid_cls), key=valid_cls.count)
+            agreement_count = valid_cls.count(most_common_cls)
+            if agreement_count >= 2:
+                score = min(1.0, score + 0.2)  # bonus for class agreement
+        else:
+            most_common_cls = "?"
+
+        # Consensus CATH — most common non-empty
+        valid_cath = [c for c in arm_caths if c]
+        agreed_cath = max(set(valid_cath), key=valid_cath.count) if valid_cath else "—"
+
+        # Consensus PDB — use seq arm if available, else struct, else hh
+        agreed_pdb = seq_pdb or (arm_pdbs[1] if len(arm_pdbs) > 1 else "") or ""
 
         if votes == 3:
             evidence = "all_three"
@@ -311,11 +338,14 @@ def fuse_results_three(
             "scope_domain":  sh["domain"],
             "sccs":          sh["sccs"],
             "cath_domain":   best_st["domain"] if best_st else "—",
-            "cath_code":     best_st["cath_code"] if best_st else sh["cath_code"],
+            "cath_code":     agreed_cath,
             "hh_hit":        best_hh["domain"] if best_hh else "—",
             "evidence":      evidence,
             "votes":         votes,
-            "arms_classes":  "/".join(arms),
+            "arms_classes":  "/".join(arm_classes),
+            "agreed_sccs":   most_common_cls,
+            "agreed_cath":   agreed_cath,
+            "agreed_pdb":    agreed_pdb,
             "ensemble_score":round(score, 4),
             "seq_evalue":    sh["evalue"],
             "struct_evalue": best_st["evalue"] if best_st else None,
@@ -343,6 +373,11 @@ def fuse_results_three(
         score = w_struct * struct_norm.get(th["domain"], 0)
         if best_hh:
             score += w_hh * hh_norm.get(best_hh["domain"], 0)
+        from db.lookup import cath_code_to_scop_class
+        st_cls = cath_code_to_scop_class(th["cath_code"]) or "?"
+        hh_cls = best_hh["sccs"][0] if best_hh and best_hh["sccs"] not in ("—","?","") else "?"
+        valid_cls = [c for c in [st_cls, hh_cls] if c != "?"]
+        most_common_cls = max(set(valid_cls), key=valid_cls.count) if valid_cls else "?"
         rows.append({
             "scope_domain":  "—",
             "sccs":          "—",
@@ -351,7 +386,10 @@ def fuse_results_three(
             "hh_hit":        best_hh["domain"] if best_hh else "—",
             "evidence":      "two_arms" if best_hh else "struct_only",
             "votes":         votes,
-            "arms_classes":  "?",
+            "arms_classes":  "/".join([st_cls, hh_cls] if best_hh else [st_cls]),
+            "agreed_sccs":   most_common_cls,
+            "agreed_cath":   th["cath_code"] or "—",
+            "agreed_pdb":    th["domain"][:4].lower(),
             "ensemble_score":round(score, 4),
             "seq_evalue":    None,
             "struct_evalue": th["evalue"],
@@ -366,6 +404,7 @@ def fuse_results_three(
     for hh in hh_hits:
         if hh["domain"] in matched_hh:
             continue
+        hh_cls = hh["sccs"][0] if hh["sccs"] not in ("—","?","") else "?"
         rows.append({
             "scope_domain":  "—",
             "sccs":          hh["sccs"],
@@ -374,7 +413,10 @@ def fuse_results_three(
             "hh_hit":        hh["domain"],
             "evidence":      "hhblits_only",
             "votes":         1,
-            "arms_classes":  hh["sccs"][0] if hh["sccs"] not in ("—","?","") else "?",
+            "arms_classes":  hh_cls,
+            "agreed_sccs":   hh_cls,
+            "agreed_cath":   hh["cath_code"] or "—",
+            "agreed_pdb":    hh["pdb"][:4].lower() if hh.get("pdb") else "—",
             "ensemble_score":round(w_hh * hh_norm.get(hh["domain"], 0), 4),
             "seq_evalue":    None,
             "struct_evalue": None,

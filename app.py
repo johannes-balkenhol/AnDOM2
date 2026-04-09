@@ -90,200 +90,182 @@ def lddt_color(lddt: float) -> str:
     return "#A32D2D"
 
 
-# ── compact domain bar with labels and pLDDT colouring ───────────────────────
-def compact_domain_bar(df_seq, df_str, df_hh, seq_len: int) -> str:
+# ── helper: single map row ───────────────────────────────────────────────────
+def _map_row(label, color, segs, seq_len):
+    content = ""
+    for seg in segs:
+        lt = seg.get("label","")
+        lbl = (f'<span style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);'
+               f'font-size:10px;color:white;font-weight:500;white-space:nowrap;'
+               f'overflow:hidden;max-width:94%;text-overflow:ellipsis">{lt}</span>'
+               if lt and seg["w"] > 9 else "")
+        content += (f'<div title="{seg.get("tip","")}" style="position:absolute;top:0;'
+                    f'left:{seg["l"]:.1f}%;width:{seg["w"]:.1f}%;height:100%;'
+                    f'background:{seg["c"]};opacity:{seg.get("o",0.85)};'
+                    f'border-radius:3px;border:1px solid rgba(255,255,255,0.5);overflow:hidden">{lbl}</div>')
+    bg = "#f0f2f6" if content else "#f8f9fa"
+    return (f'<div style="display:flex;align-items:center;margin-bottom:4px">'
+            f'<span style="width:56px;font-size:11px;color:{color};font-weight:500;flex-shrink:0">{label}</span>'
+            f'<div style="position:relative;height:26px;background:{bg};border-radius:6px;'
+            f'flex:1;border:1px solid #e0e0e0">{content}</div></div>')
+
+def _seg(df, seq_len, arm, mode):
+    segs = []
+    if df is None or len(df) == 0:
+        return segs
     lk = lookup.all_domains()
-    rows = []
+    from db.lookup import get_cath_code, cath_code_to_scop_class
+    CATH_C = {"1":"#E85D24","2":"#1D6FAE","3":"#1D9E75","4":"#BA7517"}
+    ARM_C  = {"seq":"#3B82F6","str":"#0F6E56","hh":"#7F77DD"}
+    for _, row in df.iterrows():
+        qs=int(row.get("qstart",0)); qe=int(row.get("qend",0))
+        l=(qs/seq_len)*100; w=max(((qe-qs)/seq_len)*100,2); rng=f"{qs}\u2013{qe}"
+        if mode=="scope":
+            if arm=="seq":
+                cls=lk.get(str(row["target"]),{}).get("cls","?"); sccs=lk.get(str(row["target"]),{}).get("sccs","?")
+                c=SCOP_COLORS.get(cls,"#888"); o=0.9; lbl=f"{sccs}\u00b7{rng}"; tip=f"{row['target']} | {sccs} | e={fmt_e(row['evalue'])} | {rng}"
+            elif arm=="str":
+                cc=get_cath_code(str(row["target"])); cls=cath_code_to_scop_class(cc) if cc else "?"
+                c=SCOP_COLORS.get(cls,"#888"); o=0.85; lbl=f"{cls}\u00b7{rng}"; tip=f"SCOPe class {cls} via CATH:{cc} | lDDT={float(row.get('lddt',0)):.2f} | {rng}"
+            else:
+                sccs=str(row.get("sccs","\u2014")); cls=sccs[0] if sccs not in ("\u2014","?","") else "?"
+                prob=float(row.get("prob",50))/100; c=SCOP_COLORS.get(cls,"#888"); o=0.35+0.65*prob
+                lbl=f"{sccs}\u00b7{rng}"; tip=f"{row.get('hit_name','')} | {sccs} | prob={float(row.get('prob',0)):.0f}% | {rng}"
+        elif mode=="cath":
+            if arm=="str":
+                cc=get_cath_code(str(row["target"])); lddt=float(row.get("lddt",0.7))
+                c=CATH_C.get(cc.split(".")[0] if cc else "?","#888"); o=0.5+0.5*lddt
+            elif arm=="hh":
+                cc=str(row.get("cath_code","\u2014")); prob=float(row.get("prob",50))/100
+                c=CATH_C.get(cc.split(".")[0] if cc and cc!="\u2014" else "?","#888"); o=0.35+0.65*prob
+            else:
+                cc=get_cath_code(str(row["target"])); c=CATH_C.get(cc.split(".")[0] if cc else "?","#888"); o=0.9
+            lbl=f"{cc}\u00b7{rng}" if cc and cc!="\u2014" else rng; tip=f"CATH:{cc} | {rng}"
+        else:
+            if arm=="seq":
+                pdb=pdb_from_scope(str(row["target"])); o=0.85
+                lbl=f"{pdb.upper()}\u00b7{rng}"; tip=f"{pdb.upper()} | e={fmt_e(row['evalue'])} | {float(row.get('pident',0)):.0f}%id | {rng}"
+            elif arm=="str":
+                pdb=str(row["target"])[:4].lower(); lddt=float(row.get("lddt",0.7)); o=0.5+0.5*lddt
+                lbl=f"{pdb.upper()}\u00b7{rng}"; tip=f"{pdb.upper()} | lDDT={lddt:.2f} | {rng}"
+            else:
+                pdb=str(row.get("pdb","")); prob=float(row.get("prob",50))/100; o=0.35+0.65*prob
+                lbl=f"{str(row.get('hit_name',pdb))[:8]}\u00b7{rng}"; tip=f"{row.get('hit_name',pdb)} | prob={float(row.get('prob',0)):.0f}% | {rng}"
+            c=ARM_C[arm]
+        segs.append({"l":l,"w":w,"c":c,"o":o,"label":lbl,"tip":tip})
+    return segs
 
-    # Row 1: sequence arm — SCOPe coloured, label inside
-    r1 = ""
-    if df_seq is not None and len(df_seq) > 0:
-        for _, row in df_seq.iterrows():
-            cls   = lk.get(row["target"], {}).get("cls", "?")
-            color = SCOP_COLORS.get(cls, "#888")
-            sccs  = lk.get(row["target"], {}).get("sccs", "?")
-            left  = (row["qstart"] / seq_len) * 100
-            width = max(((row["qend"] - row["qstart"]) / seq_len) * 100, 2)
-            tip   = f"{row['target']} | {sccs} | e={float(row['evalue']):.1e}"
-            rng   = f"{int(row['qstart'])}–{int(row['qend'])}"
-            lbl_text = f"{sccs} · {rng}" if width > 12 else (sccs if width > 6 else "")
-            lbl   = f'<span style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:10px;color:white;font-weight:500;white-space:nowrap;overflow:hidden;max-width:94%;text-overflow:ellipsis">{lbl_text}</span>' if lbl_text else ""
-            r1   += f'<div title="{tip}" style="position:absolute;top:0;left:{left:.1f}%;width:{width:.1f}%;height:100%;background:{color};opacity:0.9;border-radius:3px;border:1px solid rgba(255,255,255,0.5);overflow:hidden">{lbl}</div>'
-    rows.append(("Seq", r1, "#3B82F6"))
+def render_three_domain_maps(df_seq, df_str, df_hh, seq_len):
+    for mode, title, legend in [
+        ("scope","SCOPe classification"," ".join(f'<span style="color:{SCOP_COLORS.get(k,"#888")}">&#9632;</span> {k}' for k in SCOP_CLASSES)),
+        ("cath","CATH classification",'<span style="color:#E85D24">&#9632;</span> mainly alpha &nbsp;<span style="color:#1D6FAE">&#9632;</span> mainly beta &nbsp;<span style="color:#1D9E75">&#9632;</span> alpha/beta &nbsp;<span style="color:#BA7517">&#9632;</span> few secondary &nbsp;&middot; Struct opacity = lDDT'),
+        ("pdb","PDB hits",'<span style="color:#3B82F6">&#9632;</span> seq &nbsp;<span style="color:#0F6E56">&#9632;</span> struct &nbsp;<span style="color:#7F77DD">&#9632;</span> profile &nbsp;&middot; hover for residue range'),
+    ]:
+        st.markdown(f'<div style="font-size:13px;font-weight:500;margin:10px 0 2px">{title} per arm</div><div style="font-size:10px;color:#999;margin-bottom:4px">{legend}</div>', unsafe_allow_html=True)
+        html = _map_row("Seq","#3B82F6",_seg(df_seq,seq_len,"seq",mode),seq_len)
+        html += _map_row("Struct","#0F6E56",_seg(df_str,seq_len,"str",mode),seq_len)
+        html += _map_row("Profile","#7F77DD",_seg(df_hh,seq_len,"hh",mode),seq_len)
+        st.markdown(html, unsafe_allow_html=True)
 
-    # Row 2: structure arm — lDDT coloured, CATH code label
-    r2 = ""
-    if df_str is not None and len(df_str) > 0:
-        from db.lookup import get_cath_code
-        for _, row in df_str.iterrows():
-            lddt  = float(row.get("lddt", 0.7))
-            color = lddt_color(lddt)
-            left  = (row["qstart"] / seq_len) * 100
-            width = max(((row["qend"] - row["qstart"]) / seq_len) * 100, 2)
-            cc    = get_cath_code(str(row["target"]))
-            tip   = f"{row['target']} | CATH:{cc} | lDDT={lddt:.2f} | e={float(row['evalue']):.1e}"
-            rng   = f"{int(row['qstart'])}–{int(row['qend'])}"
-            lbl_text = f"{cc} · {rng}" if width > 12 and cc else (cc if width > 6 and cc else "")
-            lbl   = f'<span style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:10px;color:white;font-weight:500;white-space:nowrap;overflow:hidden;max-width:94%">{lbl_text}</span>' if lbl_text else ""
-            r2   += f'<div title="{tip}" style="position:absolute;top:0;left:{left:.1f}%;width:{width:.1f}%;height:100%;background:{color};opacity:0.85;border-radius:3px;border:1px solid rgba(255,255,255,0.4);overflow:hidden">{lbl}</div>'
-    rows.append(("Struct", r2, "#0F6E56"))
-
-    # Row 3: profile arm — purple, opacity by probability
-    r3 = ""
-    if df_hh is not None and len(df_hh) > 0:
-        for _, row in df_hh.iterrows():
-            prob  = float(row.get("prob", 50)) / 100
-            alpha = 0.35 + 0.65 * prob
-            left  = (row["qstart"] / seq_len) * 100
-            width = max(((row["qend"] - row["qstart"]) / seq_len) * 100, 2)
-            sccs  = str(row.get("sccs", "—"))
-            tip   = f"{row['hit_name']} | {sccs} | prob={float(row.get('prob',0)):.0f}% | e={float(row['evalue']):.1e}"
-            rng   = f"{int(row['qstart'])}–{int(row['qend'])}"
-            lbl_text = f"{sccs} · {rng}" if width > 12 and sccs not in ("—","?","") else (sccs if width > 6 and sccs not in ("—","?","") else "")
-            lbl   = f'<span style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:10px;color:white;font-weight:500;white-space:nowrap;overflow:hidden;max-width:94%">{lbl_text}</span>' if lbl_text else ""
-            r3   += f'<div title="{tip}" style="position:absolute;top:0;left:{left:.1f}%;width:{width:.1f}%;height:100%;background:#7F77DD;opacity:{alpha:.2f};border-radius:3px;border:1px solid rgba(255,255,255,0.4);overflow:hidden">{lbl}</div>'
-    rows.append(("Profile", r3, "#7F77DD"))
-
-    html = f'<div style="font-size:11px;color:#888;margin-bottom:6px">Hover bars · 1 to {seq_len} aa</div>'
-    for label, content, color in rows:
-        bg = "#f0f2f6" if content else "#f8f9fa"
-        html += (
-            f'<div style="display:flex;align-items:center;margin-bottom:5px">'
-            f'<span style="width:52px;font-size:11px;color:{color};font-weight:500;flex-shrink:0">{label}</span>'
-            f'<div style="position:relative;height:26px;background:{bg};border-radius:6px;flex:1;border:1px solid #e0e0e0">{content}</div>'
-            f'</div>'
-        )
-    html += (
-        '<div style="font-size:10px;color:#bbb;margin-top:2px">'
-        'Structure lDDT: '
-        '<span style="color:#1D9E75">■</span> ≥0.9 &nbsp;'
-        '<span style="color:#639922">■</span> ≥0.7 &nbsp;'
-        '<span style="color:#BA7517">■</span> ≥0.5 &nbsp;'
-        '<span style="color:#A32D2D">■</span> &lt;0.5'
-        '</div>'
-    )
-    return html
-
-
-# ── compact summary (default view) ───────────────────────────────────────────
-def render_compact_summary(df_seq, df_str, df_hh, fused, seq_len: int):
+def render_compact_summary(df_seq, df_str, df_hh, fused, seq_len):
     lk = lookup.all_domains()
-
-    # 1. Domain bar
-    st.markdown(compact_domain_bar(df_seq, df_str, df_hh, seq_len), unsafe_allow_html=True)
+    from db.lookup import get_cath_code, cath_code_to_scop_class
+    render_three_domain_maps(df_seq, df_str, df_hh, seq_len)
     st.markdown("---")
-
-    # 2. Best hit per arm
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        st.markdown('<div style="font-weight:600;font-size:13px;color:#3B82F6;border-left:3px solid #3B82F6;padding-left:6px;margin-bottom:6px">Sequence arm</div>', unsafe_allow_html=True)
-        if df_seq is not None and len(df_seq) > 0:
-            r    = df_seq.iloc[0]
-            sccs = lk.get(str(r["target"]), {}).get("sccs", "—")
-            cls  = lk.get(str(r["target"]), {}).get("cls", "?")
-            col  = SCOP_COLORS.get(cls, "#888")
-            pdb  = pdb_from_scope(str(r["target"]))
-            purl = str(r.get("PDB link", f"https://www.rcsb.org/structure/{pdb}"))
-            st.markdown(f'<span style="color:{col}">●</span> **`{sccs}`** — {SCOP_CLASSES.get(cls,cls)}', unsafe_allow_html=True)
-            st.caption(f"[{pdb.upper()}]({purl}) · e={fmt_e(r['evalue'])} · {float(r.get('pident',0)):.0f}%id · {int(r.get('qstart',0))}–{int(r.get('qend',0))} aa")
-        else:
-            st.caption("No sequence hits")
-
-    with c2:
-        st.markdown('<div style="font-weight:600;font-size:13px;color:#0F6E56;border-left:3px solid #0F6E56;padding-left:6px;margin-bottom:6px">Structure arm</div>', unsafe_allow_html=True)
-        if df_str is not None and len(df_str) > 0:
-            from db.lookup import get_cath_code, cath_code_to_scop_class
-            r    = df_str.iloc[0]
-            cc   = get_cath_code(str(r["target"]))
-            cls  = cath_code_to_scop_class(cc) if cc else "?"
-            col  = SCOP_COLORS.get(cls, "#888")
-            pdb  = str(r["target"])[:4].lower()
-            purl = str(r.get("PDB link", f"https://www.rcsb.org/structure/{pdb}"))
-            lddt = float(r.get("lddt", 0))
-            lc   = lddt_color(lddt)
-            st.markdown(f'<span style="color:{col}">●</span> **`{cc}`** → {SCOP_CLASSES.get(cls,cls)}', unsafe_allow_html=True)
-            st.markdown(f'[{pdb.upper()}]({purl}) · e={fmt_e(r["evalue"])} · <span style="color:{lc}">lDDT={lddt:.2f}</span> · {int(r.get("qstart",0))}–{int(r.get("qend",0))} aa', unsafe_allow_html=True)
-        else:
-            st.caption("No structural hits")
-
-    with c3:
-        st.markdown('<div style="font-weight:600;font-size:13px;color:#7F77DD;border-left:3px solid #7F77DD;padding-left:6px;margin-bottom:6px">Profile arm</div>', unsafe_allow_html=True)
-        if df_hh is not None and len(df_hh) > 0:
-            r    = df_hh.iloc[0]
-            sccs = str(r.get("sccs","—"))
-            cls  = sccs[0] if sccs not in ("—","?","") else "?"
-            col  = SCOP_COLORS.get(cls, "#888")
-            pdb  = str(r.get("pdb",""))
-            purl = str(r.get("PDB link", f"https://www.rcsb.org/structure/{pdb}"))
-            st.markdown(f'<span style="color:{col}">●</span> **`{sccs}`** — {SCOP_CLASSES.get(cls,cls)}', unsafe_allow_html=True)
-            st.caption(f"[{r.get('hit_name',pdb.upper())}]({purl}) · e={fmt_e(r['evalue'])} · prob={float(r.get('prob',0)):.0f}% · {int(r.get('qstart',0))}–{int(r.get('qend',0))} aa")
-        else:
-            st.caption("No profile hits" if df_hh is not None else "Deep search off")
-
-    st.caption(
-        "Each arm searches a different database — the PDB IDs shown may differ but often represent "
-        "the same fold family in different crystal structures. The ensemble resolves this by matching "
-        "query region overlap, not PDB identity."
-    )
+    st.markdown('<div style="font-size:13px;font-weight:500;margin-bottom:6px">Top-1 per arm and category</div>', unsafe_allow_html=True)
+    hc,sc,tc,pc = st.columns([1,2,2,2])
+    hc.markdown("")
+    sc.markdown('<span style="font-weight:600;color:#3B82F6;font-size:12px">Sequence arm</span>', unsafe_allow_html=True)
+    tc.markdown('<span style="font-weight:600;color:#0F6E56;font-size:12px">Structure arm</span>', unsafe_allow_html=True)
+    pc.markdown('<span style="font-weight:600;color:#7F77DD;font-size:12px">Profile arm</span>', unsafe_allow_html=True)
+    # SCOPe row
+    lc1,sc1,tc1,pc1 = st.columns([1,2,2,2])
+    lc1.markdown('<span style="font-size:11px;color:#888">SCOPe</span>', unsafe_allow_html=True)
+    with sc1:
+        if df_seq is not None and len(df_seq)>0:
+            r=df_seq.iloc[0]; sccs=lk.get(str(r["target"]),{}).get("sccs","\u2014"); cls=lk.get(str(r["target"]),{}).get("cls","?"); col=SCOP_COLORS.get(cls,"#888"); rng=f"{int(r.get('qstart',0))}\u2013{int(r.get('qend',0))} aa"
+            st.markdown(f'<span style="color:{col}">\u25cf</span> `{sccs}`<br><span style="font-size:11px;color:#888">{SCOP_CLASSES.get(cls,cls)} \u00b7 {rng}</span>', unsafe_allow_html=True)
+        else: st.caption("\u2014")
+    with tc1:
+        if df_str is not None and len(df_str)>0:
+            r=df_str.iloc[0]; cc=get_cath_code(str(r["target"])); cls=cath_code_to_scop_class(cc) if cc else "?"; col=SCOP_COLORS.get(cls,"#888"); rng=f"{int(r.get('qstart',0))}\u2013{int(r.get('qend',0))} aa"; lc=lddt_color(float(r.get("lddt",0)))
+            st.markdown(f'<span style="color:{col}">\u25cf</span> class `{cls}`<br><span style="font-size:11px;color:#888">{SCOP_CLASSES.get(cls,cls)} \u00b7 {rng} \u00b7 </span><span style="font-size:11px;color:{lc}">lDDT={float(r.get("lddt",0)):.2f}</span>', unsafe_allow_html=True)
+        else: st.caption("\u2014")
+    with pc1:
+        if df_hh is not None and len(df_hh)>0:
+            r=df_hh.iloc[0]; sccs=str(r.get("sccs","\u2014")); cls=sccs[0] if sccs not in ("\u2014","?","") else "?"; col=SCOP_COLORS.get(cls,"#888"); rng=f"{int(r.get('qstart',0))}\u2013{int(r.get('qend',0))} aa"
+            st.markdown(f'<span style="color:{col}">\u25cf</span> `{sccs}`<br><span style="font-size:11px;color:#888">{SCOP_CLASSES.get(cls,cls)} \u00b7 {rng} \u00b7 prob={float(r.get("prob",0)):.0f}%</span>', unsafe_allow_html=True)
+        else: st.caption("\u2014")
+    # CATH row
+    lc2,sc2,tc2,pc2 = st.columns([1,2,2,2])
+    lc2.markdown('<span style="font-size:11px;color:#888">CATH</span>', unsafe_allow_html=True)
+    with sc2:
+        if df_seq is not None and len(df_seq)>0:
+            r=df_seq.iloc[0]; cc=get_cath_code(str(r["target"])); rng=f"{int(r.get('qstart',0))}\u2013{int(r.get('qend',0))} aa"; url=f"https://www.cathdb.info/version/v4_3_0/superfamily/{cc}" if cc else "#"
+            st.markdown(f'[`{cc or "\u2014"}`]({url})<br><span style="font-size:11px;color:#888">{rng}</span>', unsafe_allow_html=True)
+        else: st.caption("\u2014")
+    with tc2:
+        if df_str is not None and len(df_str)>0:
+            r=df_str.iloc[0]; cc=get_cath_code(str(r["target"])); rng=f"{int(r.get('qstart',0))}\u2013{int(r.get('qend',0))} aa"; url=f"https://www.cathdb.info/version/v4_3_0/superfamily/{cc}" if cc else "#"
+            st.markdown(f'[`{cc or "\u2014"}`]({url})<br><span style="font-size:11px;color:#888">{rng}</span>', unsafe_allow_html=True)
+        else: st.caption("\u2014")
+    with pc2:
+        if df_hh is not None and len(df_hh)>0:
+            r=df_hh.iloc[0]; cc=str(r.get("cath_code","\u2014")); rng=f"{int(r.get('qstart',0))}\u2013{int(r.get('qend',0))} aa"; url=f"https://www.cathdb.info/version/v4_3_0/superfamily/{cc}" if cc and cc!="\u2014" else "#"
+            st.markdown(f'[`{cc}`]({url})<br><span style="font-size:11px;color:#888">{rng}</span>', unsafe_allow_html=True)
+        else: st.caption("\u2014")
+    # PDB row
+    lc3,sc3,tc3,pc3 = st.columns([1,2,2,2])
+    lc3.markdown('<span style="font-size:11px;color:#888">PDB</span>', unsafe_allow_html=True)
+    with sc3:
+        if df_seq is not None and len(df_seq)>0:
+            r=df_seq.iloc[0]; pdb=pdb_from_scope(str(r["target"])); purl=str(r.get("PDB link",f"https://www.rcsb.org/structure/{pdb}")); rng=f"{int(r.get('qstart',0))}\u2013{int(r.get('qend',0))} aa"
+            st.markdown(f'[{pdb.upper()}]({purl})<br><span style="font-size:11px;color:#888">{rng} \u00b7 {float(r.get("pident",0)):.0f}%id</span>', unsafe_allow_html=True)
+        else: st.caption("\u2014")
+    with tc3:
+        if df_str is not None and len(df_str)>0:
+            r=df_str.iloc[0]; pdb=str(r["target"])[:4].lower(); purl=str(r.get("PDB link",f"https://www.rcsb.org/structure/{pdb}")); rng=f"{int(r.get('qstart',0))}\u2013{int(r.get('qend',0))} aa"; lc=lddt_color(float(r.get("lddt",0)))
+            st.markdown(f'[{pdb.upper()}]({purl})<br><span style="font-size:11px;color:#888">{rng} \u00b7 </span><span style="font-size:11px;color:{lc}">lDDT={float(r.get("lddt",0)):.2f}</span>', unsafe_allow_html=True)
+        else: st.caption("\u2014")
+    with pc3:
+        if df_hh is not None and len(df_hh)>0:
+            r=df_hh.iloc[0]; pdb=str(r.get("pdb","")); purl=str(r.get("PDB link",f"https://www.rcsb.org/structure/{pdb}")); rng=f"{int(r.get('qstart',0))}\u2013{int(r.get('qend',0))} aa"
+            st.markdown(f'[{str(r.get("hit_name",pdb.upper()))}]({purl})<br><span style="font-size:11px;color:#888">{rng} \u00b7 prob={float(r.get("prob",0)):.0f}%</span>', unsafe_allow_html=True)
+        else: st.caption("\u2014")
+    # Ensemble verdict
     if not fused.empty:
         st.markdown("---")
-        top   = fused.iloc[0]
-        ev    = top.get("evidence","")
-        votes = int(top.get("votes",0))
-        conf_color = {"all_three":"#1D9E75","two_arms":"#BA7517"}.get(ev,"#888780")
-        conf_label = {
-            "all_three":"All three arms agree — highest confidence",
-            "two_arms":"Two arms agree — high confidence",
-            "seq_only":"Sequence arm only",
-            "struct_only":"Structure arm only (dark proteome)",
-            "hhblits_only":"Profile arm only (twilight zone)",
-        }.get(ev, ev)
-        sccs  = top.get("sccs","—")
-        cath  = top.get("cath_code","—")
-        score = float(top.get("ensemble_score",0))
+        top=fused.iloc[0]; ev=top.get("evidence",""); votes=int(top.get("votes",0))
+        conf_color={"all_three":"#1D9E75","two_arms":"#BA7517"}.get(ev,"#888780")
+        conf_label={"all_three":"All three arms agree \u2014 highest confidence","two_arms":"Two arms agree \u2014 high confidence","seq_only":"Sequence arm only","struct_only":"Structure arm only (dark proteome)","hhblits_only":"Profile arm only (twilight zone)"}.get(ev,ev)
+        agreed_sccs=top.get("agreed_sccs",top.get("sccs","\u2014")); agreed_cath=top.get("agreed_cath",top.get("cath_code","\u2014"))
+        score=float(top.get("ensemble_score",0)); arms_cls=top.get("arms_classes","")
         st.markdown(
-            f'<div style="background:var(--color-background-secondary);border-left:4px solid {conf_color};'
-            f'border-radius:0 8px 8px 0;padding:10px 14px;margin-top:4px">'
-            f'<span style="font-weight:600;color:{conf_color}">Ensemble: {votes}/3 votes · {conf_label}</span><br>'
-            f'<span style="font-size:13px">SCOPe: <b>{sccs}</b> · CATH: <b>{cath}</b> · Score: {score:.3f}</span>'
-            f'</div>',
-            unsafe_allow_html=True
-        )
-
-    # 4. Functional annotation — expander (no page jump, no rerun)
-    top_pdb = ""
+            f'<div style="background:var(--color-background-secondary);border-left:5px solid {conf_color};border-radius:0 10px 10px 0;padding:14px 18px;margin-top:8px">'
+            f'<div style="font-weight:700;font-size:15px;color:{conf_color}">Ensemble: {votes}/3 votes \u00b7 {conf_label}</div>'
+            f'<div style="font-size:13px;margin-top:6px"><b>SCOPe consensus:</b> {agreed_sccs} &nbsp;\u00b7&nbsp; <b>CATH consensus:</b> {agreed_cath} &nbsp;\u00b7&nbsp; <b>Score:</b> {score:.3f}</div>'
+            f'<div style="font-size:11px;color:#888;margin-top:4px">Arm classes: {arms_cls} &nbsp;\u00b7&nbsp; Score = weighted e-value norm + class agreement bonus when \u22652 arms agree</div>'
+            f'</div>', unsafe_allow_html=True)
+    # Functional annotation
+    top_pdb=""
     if not fused.empty:
-        top_pdb = pdb_from_scope(str(fused.iloc[0].get("scope_domain","")))
-        if not top_pdb:
-            top_pdb = str(fused.iloc[0].get("hh_hit",""))[:4].lower()
-
-    if top_pdb and len(top_pdb) == 4:
-        with st.expander(f"Functional annotation — {top_pdb.upper()}", expanded=False):
-            st.caption(
-                "Note: each arm searches a different database and may report different representative "
-                "PDB structures for the same fold. The annotation below is for the top ensemble hit."
-            )
-            with st.spinner(f"Fetching {top_pdb.upper()} from RCSB + UniProt…"):
-                info = fetch_pdb_function(top_pdb)
+        top_pdb=pdb_from_scope(str(fused.iloc[0].get("scope_domain","")))
+        if not top_pdb: top_pdb=str(fused.iloc[0].get("hh_hit",""))[:4].lower()
+    if top_pdb and len(top_pdb)==4:
+        st.markdown(f'<div style="font-size:11px;color:#888;margin:8px 0 2px">Functional annotation for top ensemble hit ({top_pdb.upper()})</div>', unsafe_allow_html=True)
+        with st.expander(f"Load UniProt \u00b7 Pfam \u00b7 AlphaFold structure \u2014 {top_pdb.upper()}", expanded=False):
+            with st.spinner(f"Fetching {top_pdb.upper()}\u2026"):
+                info=fetch_pdb_function(top_pdb)
             if info.get("uniprot_id"):
-                uid = info["uniprot_id"]
-                st.markdown(
-                    f'**UniProt:** [{uid}](https://www.uniprot.org/uniprot/{uid}) &nbsp;·&nbsp; '
-                    f'**Gene:** {info.get("gene","—")} &nbsp;·&nbsp; '
-                    f'**Organism:** {info.get("organism","—")}'
-                )
-                if info.get("function"):
-                    st.markdown(f'_{info["function"][:350]}_')
-                if info.get("pfam"):
-                    st.markdown("**Pfam:** " + " · ".join(f'`{p["pfam_id"]}` {p["name"]}' for p in info["pfam"][:4]))
-                st.markdown(
-                    f'<iframe src="https://alphafold.ebi.ac.uk/entry/{uid}" '
-                    f'width="100%" height="500" style="border:none;border-radius:8px;margin-top:8px" '
-                    f'title="AlphaFold structure {uid}"></iframe>',
-                    unsafe_allow_html=True
-                )
+                uid=info["uniprot_id"]
+                st.markdown(f'**UniProt:** [{uid}](https://www.uniprot.org/uniprot/{uid}) &nbsp;\u00b7&nbsp; **Gene:** {info.get("gene","\u2014")} &nbsp;\u00b7&nbsp; **Organism:** {info.get("organism","\u2014")}')
+                if info.get("function"): st.markdown(f'_{info["function"][:400]}_')
+                if info.get("pfam"): st.markdown("**Pfam:** " + " \u00b7 ".join(f'`{p["pfam_id"]}` {p["name"]}' for p in info["pfam"][:4]))
+                st.markdown(f'<iframe src="https://alphafold.ebi.ac.uk/entry/{uid}" width="100%" height="500" style="border:none;border-radius:8px;margin-top:8px" title="AlphaFold {uid}"></iframe>', unsafe_allow_html=True)
             else:
-                st.caption(f"No UniProt mapping found for {top_pdb.upper()}.")
+                st.caption(f"No UniProt mapping for {top_pdb.upper()}.")
+                st.markdown(f"[Search RCSB](https://www.rcsb.org/structure/{top_pdb.upper()})")
+
 
 
 # ── expert arm panel ──────────────────────────────────────────────────────────
