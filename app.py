@@ -214,7 +214,11 @@ def render_compact_summary(df_seq, df_str, df_hh, fused, seq_len: int):
         else:
             st.caption("No profile hits" if df_hh is not None else "Deep search off")
 
-    # 3. Ensemble verdict
+    st.caption(
+        "Each arm searches a different database — the PDB IDs shown may differ but often represent "
+        "the same fold family in different crystal structures. The ensemble resolves this by matching "
+        "query region overlap, not PDB identity."
+    )
     if not fused.empty:
         st.markdown("---")
         top   = fused.iloc[0]
@@ -240,7 +244,7 @@ def render_compact_summary(df_seq, df_str, df_hh, fused, seq_len: int):
             unsafe_allow_html=True
         )
 
-    # 4. Functional info button
+    # 4. Functional annotation — expander (no page jump, no rerun)
     top_pdb = ""
     if not fused.empty:
         top_pdb = pdb_from_scope(str(fused.iloc[0].get("scope_domain","")))
@@ -248,38 +252,32 @@ def render_compact_summary(df_seq, df_str, df_hh, fused, seq_len: int):
             top_pdb = str(fused.iloc[0].get("hh_hit",""))[:4].lower()
 
     if top_pdb and len(top_pdb) == 4:
-        if st.button(f"Show functional annotation — {top_pdb.upper()}", key="func_top_btn"):
-            st.session_state["func_top_open"] = top_pdb
-
-    if st.session_state.get("func_top_open"):
-        pid = st.session_state["func_top_open"]
-        with st.spinner(f"Fetching {pid.upper()} from RCSB + UniProt…"):
-            info = fetch_pdb_function(pid)
-        if info.get("uniprot_id"):
-            uid = info["uniprot_id"]
-            st.markdown(
-                f'<div style="background:var(--color-background-secondary);border-radius:8px;padding:12px 16px;margin-top:8px">'
-                f'<b>UniProt:</b> <a href="https://www.uniprot.org/uniprot/{uid}">{uid}</a> &nbsp;·&nbsp; '
-                f'<b>Gene:</b> {info.get("gene","—")} &nbsp;·&nbsp; '
-                f'<b>Organism:</b> {info.get("organism","—")}<br>',
-                unsafe_allow_html=True
+        with st.expander(f"Functional annotation — {top_pdb.upper()}", expanded=False):
+            st.caption(
+                "Note: each arm searches a different database and may report different representative "
+                "PDB structures for the same fold. The annotation below is for the top ensemble hit."
             )
-            if info.get("function"):
-                st.markdown(f'<span style="font-size:13px">{info["function"][:350]}</span>', unsafe_allow_html=True)
-            if info.get("pfam"):
-                st.markdown("**Pfam:** " + " · ".join(f'`{p["pfam_id"]}` {p["name"]}' for p in info["pfam"][:4]))
-            st.markdown("</div>", unsafe_allow_html=True)
-            st.markdown(
-                f'<iframe src="https://alphafold.ebi.ac.uk/entry/{uid}" '
-                f'width="100%" height="480" style="border:none;border-radius:8px;margin-top:8px" '
-                f'title="AlphaFold structure {uid}"></iframe>',
-                unsafe_allow_html=True
-            )
-        else:
-            st.caption(f"No UniProt mapping found for {pid.upper()}.")
-        if st.button("Close", key="func_top_close"):
-            st.session_state.pop("func_top_open", None)
-            st.rerun()
+            with st.spinner(f"Fetching {top_pdb.upper()} from RCSB + UniProt…"):
+                info = fetch_pdb_function(top_pdb)
+            if info.get("uniprot_id"):
+                uid = info["uniprot_id"]
+                st.markdown(
+                    f'**UniProt:** [{uid}](https://www.uniprot.org/uniprot/{uid}) &nbsp;·&nbsp; '
+                    f'**Gene:** {info.get("gene","—")} &nbsp;·&nbsp; '
+                    f'**Organism:** {info.get("organism","—")}'
+                )
+                if info.get("function"):
+                    st.markdown(f'_{info["function"][:350]}_')
+                if info.get("pfam"):
+                    st.markdown("**Pfam:** " + " · ".join(f'`{p["pfam_id"]}` {p["name"]}' for p in info["pfam"][:4]))
+                st.markdown(
+                    f'<iframe src="https://alphafold.ebi.ac.uk/entry/{uid}" '
+                    f'width="100%" height="500" style="border:none;border-radius:8px;margin-top:8px" '
+                    f'title="AlphaFold structure {uid}"></iframe>',
+                    unsafe_allow_html=True
+                )
+            else:
+                st.caption(f"No UniProt mapping found for {top_pdb.upper()}.")
 
 
 # ── expert arm panel ──────────────────────────────────────────────────────────
@@ -350,12 +348,10 @@ def render_arm_panel(title, color, df, arm, top_n=7):
             st.markdown(f"**{i+1}.** [{pdb_id.upper()}]({purl}) {desc}")
             st.caption(extra)
         with c2:
-            if st.button("func", key=f"func_{arm}_{i}_{pdb_id}"):
-                st.session_state[f"fdet_{arm}_{i}"] = pdb_id
-        if st.session_state.get(f"fdet_{arm}_{i}"):
-            pid = st.session_state[f"fdet_{arm}_{i}"]
-            with st.spinner(f"Fetching {pid.upper()}…"):
-                info = fetch_pdb_function(pid)
+            pass  # expander below handles func
+        with st.expander(f"Function: {pdb_id.upper()}", expanded=False):
+            with st.spinner(f"Fetching {pdb_id.upper()}…"):
+                info = fetch_pdb_function(pdb_id)
             if info.get("uniprot_id"):
                 uid = info["uniprot_id"]
                 st.markdown(f"**[{uid}](https://www.uniprot.org/uniprot/{uid})** · {info.get('gene','—')} · {info.get('organism','—')}")
@@ -363,9 +359,6 @@ def render_arm_panel(title, color, df, arm, top_n=7):
                 if info.get("pfam"): st.caption("Pfam: " + " · ".join(f'{p["pfam_id"]} {p["name"]}' for p in info["pfam"][:3]))
             else:
                 st.caption("No UniProt mapping.")
-            if st.button("✕", key=f"fdet_close_{arm}_{i}"):
-                st.session_state.pop(f"fdet_{arm}_{i}", None)
-                st.rerun()
 
 
 # ── sidebar ───────────────────────────────────────────────────────────────────
