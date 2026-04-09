@@ -285,10 +285,12 @@ def fuse_results_three(
         votes = 1
         score = w_seq * seq_norm.get(sh["domain"], 0)
 
-        seq_cls  = sh["sccs"][0] if sh["sccs"] not in ("—","?","") else "?"
+        seq_sccs = sh["sccs"] if sh["sccs"] not in ("—","?","") else "?"
+        seq_cls  = seq_sccs[0] if seq_sccs != "?" else "?"
         seq_cath = sh["cath_code"] or ""
         seq_pdb  = sh["domain"][1:5].lower() if len(sh["domain"]) >= 5 else ""
-        arm_classes = [seq_cls]
+        arm_sccs  = [seq_sccs]   # full sccs per arm e.g. "a.1.1.2"
+        arm_classes = [seq_cls]  # class letter per arm e.g. "a"
         arm_caths   = [seq_cath]
         arm_pdbs    = [seq_pdb]
 
@@ -297,6 +299,8 @@ def fuse_results_three(
             votes += 1
             score += w_struct * struct_norm.get(best_st["domain"], 0)
             st_cls = cath_code_to_scop_class(best_st["cath_code"]) or "?"
+            # Structure arm gives us class letter only (no full sccs from CATH crosswalk)
+            arm_sccs.append(st_cls)   # only class-level from struct
             arm_classes.append(st_cls)
             arm_caths.append(best_st["cath_code"] or "")
             arm_pdbs.append(best_st["domain"][:4].lower())
@@ -305,26 +309,52 @@ def fuse_results_three(
             matched_hh.add(best_hh["domain"])
             votes += 1
             score += w_hh * hh_norm.get(best_hh["domain"], 0)
-            hh_cls = best_hh["sccs"][0] if best_hh["sccs"] not in ("—","?","") else "?"
+            hh_sccs = best_hh["sccs"] if best_hh["sccs"] not in ("—","?","") else "?"
+            hh_cls  = hh_sccs[0] if hh_sccs != "?" else "?"
+            arm_sccs.append(hh_sccs)
             arm_classes.append(hh_cls)
             arm_caths.append(best_hh.get("cath_code", "") or "")
             arm_pdbs.append(best_hh["pdb"][:4].lower() if best_hh.get("pdb") else "")
 
-        # Class agreement bonus (+0.2 if majority agree on same SCOPe class letter)
-        valid_cls = [c for c in arm_classes if c != "?"]
-        if valid_cls:
-            most_common_cls = max(set(valid_cls), key=valid_cls.count)
-            agreement_count = valid_cls.count(most_common_cls)
-            if agreement_count >= 2:
-                score = min(1.0, score + 0.2)  # bonus for class agreement
-        else:
-            most_common_cls = "?"
+        # ── Consensus SCOPe: hierarchical agreement ───────────────────────────
+        # Try most specific first: full sccs (e.g. "a.1.1.2")
+        # Then superfamily (first 3 parts: "a.1.1"), fold ("a.1"), class ("a")
+        # Use the most specific level where ≥2 arms agree
+        def _majority(values):
+            v = [x for x in values if x and x != "?"]
+            if not v: return "?"
+            best = max(set(v), key=v.count)
+            return best if v.count(best) >= 2 else "?"
 
-        # Consensus CATH — most common non-empty
+        # Full sccs agreement (seq + hh both have full sccs)
+        full_sccs_vals = [s for s in arm_sccs if "." in s]
+        agreed_sccs = _majority(full_sccs_vals)
+
+        # Superfamily level (a.1.1)
+        if agreed_sccs == "?":
+            sf_vals = [".".join(s.split(".")[:3]) for s in arm_sccs if s.count(".") >= 2]
+            agreed_sccs = _majority(sf_vals)
+
+        # Fold level (a.1)
+        if agreed_sccs == "?":
+            fold_vals = [".".join(s.split(".")[:2]) for s in arm_sccs if "." in s]
+            agreed_sccs = _majority(fold_vals)
+
+        # Class letter fallback
+        if agreed_sccs == "?":
+            agreed_sccs = _majority(arm_classes)
+
+        # Agreement bonus: +0.2 if ≥2 arms agree at any level
+        if agreed_sccs != "?":
+            score = min(1.0, score + 0.2)
+
+        most_common_cls = agreed_sccs[0] if agreed_sccs and agreed_sccs != "?" else "?"
+
+        # Consensus CATH
         valid_cath = [c for c in arm_caths if c]
         agreed_cath = max(set(valid_cath), key=valid_cath.count) if valid_cath else "—"
 
-        # Consensus PDB — use seq arm if available, else struct, else hh
+        # Consensus PDB
         agreed_pdb = seq_pdb or (arm_pdbs[1] if len(arm_pdbs) > 1 else "") or ""
 
         if votes == 3:
@@ -342,7 +372,7 @@ def fuse_results_three(
             "hh_hit":        best_hh["domain"] if best_hh else "—",
             "evidence":      evidence,
             "votes":         votes,
-            "arms_classes":  "/".join(arm_classes),
+            "arms_classes":  " / ".join(arm_sccs),
             "agreed_sccs":   most_common_cls,
             "agreed_cath":   agreed_cath,
             "agreed_pdb":    agreed_pdb,
