@@ -91,81 +91,153 @@ def lddt_color(lddt: float) -> str:
 
 
 # ── helper: single map row ───────────────────────────────────────────────────
-def _map_row(label, color, segs, seq_len):
+def _map_row(label, color, segs, seq_len, sublabel=""):
     content = ""
     for seg in segs:
-        lt = seg.get("label","")
+        lt  = seg.get("label","")
+        tip = seg.get("tip","").replace('"',"'").replace("\n"," ")
         lbl = (f'<span style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);'
                f'font-size:10px;color:white;font-weight:500;white-space:nowrap;'
-               f'overflow:hidden;max-width:94%;text-overflow:ellipsis">{lt}</span>'
-               if lt and seg["w"] > 9 else "")
-        content += (f'<div title="{seg.get("tip","")}" style="position:absolute;top:0;'
-                    f'left:{seg["l"]:.1f}%;width:{seg["w"]:.1f}%;height:100%;'
-                    f'background:{seg["c"]};opacity:{seg.get("o",0.85)};'
-                    f'border-radius:3px;border:1px solid rgba(255,255,255,0.5);overflow:hidden">{lbl}</div>')
+               f'overflow:hidden;max-width:90%;text-overflow:ellipsis">{lt}</span>'
+               if lt and seg["w"] > 10 else "")
+        tid = f"tip_{id(seg) % 99999}"
+        content += (
+            f'<div style="position:absolute;top:0;left:{seg["l"]:.1f}%;width:{seg["w"]:.1f}%;'
+            f'height:100%;background:{seg["c"]};opacity:{seg.get("o",0.85)};'
+            f'border-radius:3px;border:1px solid rgba(255,255,255,0.5);overflow:hidden;cursor:pointer"'
+            f' onmouseover="var t=document.getElementById(\'tipbar\');if(t){{t.innerHTML=\'{tip}\';t.style.display=\'block\';}}"'
+            f' onmouseout="var t=document.getElementById(\'tipbar\');if(t)t.style.display=\'none\';">'
+            f'{lbl}</div>'
+        )
     bg = "#f0f2f6" if content else "#f8f9fa"
-    return (f'<div style="display:flex;align-items:center;margin-bottom:4px">'
-            f'<span style="width:56px;font-size:11px;color:{color};font-weight:500;flex-shrink:0">{label}</span>'
-            f'<div style="position:relative;height:26px;background:{bg};border-radius:6px;'
-            f'flex:1;border:1px solid #e0e0e0">{content}</div></div>')
+    sub = (f'<br><span style="font-size:9px;font-weight:400;color:#bbb">{sublabel}</span>'
+           if sublabel else "")
+    return (
+        f'<div style="display:flex;align-items:center;margin-bottom:4px">'
+        f'<span style="width:62px;font-size:11px;color:{color};font-weight:500;flex-shrink:0;line-height:1.2">{label}{sub}</span>'
+        f'<div style="position:relative;height:28px;background:{bg};border-radius:6px;'
+        f'flex:1;border:1px solid #e0e0e0">{content}</div></div>'
+    )
 
-def _seg(df, seq_len, arm, mode):
+def _map_tooltip_bar():
+    return (
+        '<div id="tipbar" style="display:none;background:#333;color:#fff;font-size:11px;'
+        'padding:3px 10px;border-radius:4px;margin-bottom:5px;'
+        'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%"></div>'
+    )
+
+CATH_NAMES = {"1":"mainly alpha","2":"mainly beta","3":"alpha/beta","4":"few secondary"}
+
+def _seg(df, seq_len, arm, mode, row_start=0, row_end=None):
     segs = []
     if df is None or len(df) == 0:
         return segs
+    df_use = df.iloc[row_start:row_end] if row_end is not None else df.iloc[row_start:]
     lk = lookup.all_domains()
     from db.lookup import get_cath_code, cath_code_to_scop_class
     CATH_C = {"1":"#E85D24","2":"#1D6FAE","3":"#1D9E75","4":"#BA7517"}
     ARM_C  = {"seq":"#3B82F6","str":"#0F6E56","hh":"#7F77DD"}
-    for _, row in df.iterrows():
-        qs=int(row.get("qstart",0)); qe=int(row.get("qend",0))
-        l=(qs/seq_len)*100; w=max(((qe-qs)/seq_len)*100,2); rng=f"{qs}–{qe}"
-        if mode=="scope":
-            if arm=="seq":
-                cls=lk.get(str(row["target"]),{}).get("cls","?"); sccs=lk.get(str(row["target"]),{}).get("sccs","?")
-                c=SCOP_COLORS.get(cls,"#888"); o=0.9; lbl=f"{sccs}·{rng}"; tip=f"{row['target']} | {sccs} | e={fmt_e(row['evalue'])} | {rng}"
-            elif arm=="str":
-                cc=get_cath_code(str(row["target"])); cls=cath_code_to_scop_class(cc) if cc else "?"
-                c=SCOP_COLORS.get(cls,"#888"); o=0.85; lbl=f"{cls}·{rng}"; tip=f"SCOPe class {cls} via CATH:{cc} | lDDT={float(row.get('lddt',0)):.2f} | {rng}"
+    for _, row in df_use.iterrows():
+        qs = int(row.get("qstart",0)); qe = int(row.get("qend",0))
+        l  = (qs / seq_len) * 100
+        w  = max(((qe - qs) / seq_len) * 100, 2)
+        rng = f"{qs}-{qe}"
+        if mode == "scope":
+            if arm == "seq":
+                cls  = lk.get(str(row["target"]),{}).get("cls","?")
+                sccs = lk.get(str(row["target"]),{}).get("sccs","?")
+                c = SCOP_COLORS.get(cls,"#888"); o = 0.9
+                lbl = f"{sccs} {rng}"
+                tip = f"{row['target']} | {sccs} | e={fmt_e(row['evalue'])} | {rng} aa"
+            elif arm == "str":
+                cc  = get_cath_code(str(row["target"]))
+                cls = cath_code_to_scop_class(cc) if cc else "?"
+                c = SCOP_COLORS.get(cls,"#888"); o = 0.85
+                lbl = f"class {cls} {rng}"
+                tip = f"class {cls} via CATH:{cc} | lDDT={float(row.get('lddt',0)):.2f} | {rng} aa"
             else:
-                sccs=str(row.get("sccs","—")); cls=sccs[0] if sccs not in ("—","?","") else "?"
-                prob=float(row.get("prob",50))/100; c=SCOP_COLORS.get(cls,"#888"); o=0.35+0.65*prob
-                lbl=f"{sccs}·{rng}"; tip=f"{row.get('hit_name','')} | {sccs} | prob={float(row.get('prob',0)):.0f}% | {rng}"
-        elif mode=="cath":
-            if arm=="str":
-                cc=get_cath_code(str(row["target"])); lddt=float(row.get("lddt",0.7))
-                c=CATH_C.get(cc.split(".")[0] if cc else "?","#888"); o=0.5+0.5*lddt
-            elif arm=="hh":
-                cc=str(row.get("cath_code","—")); prob=float(row.get("prob",50))/100
-                c=CATH_C.get(cc.split(".")[0] if cc and cc!="—" else "?","#888"); o=0.35+0.65*prob
+                sccs = str(row.get("sccs","?"))
+                cls  = sccs[0] if sccs not in ("—","?","") else "?"
+                # Fallback for unknown: use CATH class name
+                if cls == "?":
+                    cc = str(row.get("cath_code",""))
+                    if cc and cc not in ("—","?",""):
+                        c1 = cc.split(".")[0]
+                        sccs = f"CATH-{CATH_NAMES.get(c1,c1)}"
+                        cls  = {"1":"a","2":"b","3":"c","4":"g"}.get(c1,"?")
+                prob = float(row.get("prob",50)) / 100
+                c = SCOP_COLORS.get(cls,"#888"); o = 0.35 + 0.65*prob
+                lbl = f"{sccs} {rng}"
+                tip = f"{row.get('hit_name','')} | {sccs} | prob={float(row.get('prob',0)):.0f}% | {rng} aa"
+        elif mode == "cath":
+            if arm == "str":
+                cc   = get_cath_code(str(row["target"]))
+                lddt = float(row.get("lddt",0.7))
+                c = CATH_C.get(cc.split(".")[0] if cc else "?","#888"); o = 0.5+0.5*lddt
+            elif arm == "hh":
+                cc   = str(row.get("cath_code","?"))
+                prob = float(row.get("prob",50)) / 100
+                c = CATH_C.get(cc.split(".")[0] if cc and cc not in ("—","?") else "?","#888"); o = 0.35+0.65*prob
             else:
-                cc=get_cath_code(str(row["target"])); c=CATH_C.get(cc.split(".")[0] if cc else "?","#888"); o=0.9
-            lbl=f"{cc}·{rng}" if cc and cc!="—" else rng; tip=f"CATH:{cc} | {rng}"
-        else:
-            if arm=="seq":
-                pdb=pdb_from_scope(str(row["target"])); o=0.85
-                lbl=f"{pdb.upper()}·{rng}"; tip=f"{pdb.upper()} | e={fmt_e(row['evalue'])} | {float(row.get('pident',0)):.0f}%id | {rng}"
-            elif arm=="str":
-                pdb=str(row["target"])[:4].lower(); lddt=float(row.get("lddt",0.7)); o=0.5+0.5*lddt
-                lbl=f"{pdb.upper()}·{rng}"; tip=f"{pdb.upper()} | lDDT={lddt:.2f} | {rng}"
+                cc = get_cath_code(str(row["target"]))
+                c  = CATH_C.get(cc.split(".")[0] if cc else "?","#888"); o = 0.9
+            lbl = f"{cc} {rng}" if cc and cc not in ("—","?") else rng
+            tip = f"CATH:{cc} | {rng} aa"
+        else:  # pdb
+            if arm == "seq":
+                pdb = pdb_from_scope(str(row["target"])); o = 0.85
+                lbl = f"{pdb.upper()} {rng}"
+                tip = f"{pdb.upper()} | e={fmt_e(row['evalue'])} | {float(row.get('pident',0)):.0f}%id | {rng} aa"
+            elif arm == "str":
+                pdb  = str(row["target"])[:4].lower()
+                lddt = float(row.get("lddt",0.7)); o = 0.5+0.5*lddt
+                lbl  = f"{pdb.upper()} {rng}"
+                tip  = f"{pdb.upper()} | lDDT={lddt:.2f} | {rng} aa"
             else:
-                pdb=str(row.get("pdb","")); prob=float(row.get("prob",50))/100; o=0.35+0.65*prob
-                lbl=f"{str(row.get('hit_name',pdb))[:8]}·{rng}"; tip=f"{row.get('hit_name',pdb)} | prob={float(row.get('prob',0)):.0f}% | {rng}"
-            c=ARM_C[arm]
+                pdb  = str(row.get("pdb",""))
+                prob = float(row.get("prob",50)) / 100; o = 0.35+0.65*prob
+                lbl  = f"{str(row.get('hit_name',pdb))[:8]} {rng}"
+                tip  = f"{row.get('hit_name',pdb)} | prob={float(row.get('prob',0)):.0f}% | {rng} aa"
+            c = ARM_C[arm]
         segs.append({"l":l,"w":w,"c":c,"o":o,"label":lbl,"tip":tip})
     return segs
 
+
 def render_three_domain_maps(df_seq, df_str, df_hh, seq_len):
+    """Three maps (SCOPe/CATH/PDB). Profile arm split into 3 sub-rows of 7 to avoid overlap."""
+    n_hh = len(df_hh) if df_hh is not None else 0
     for mode, title, legend in [
-        ("scope","SCOPe classification"," ".join(f'<span style="color:{SCOP_COLORS.get(k,"#888")}">&#9632;</span> {k}' for k in SCOP_CLASSES)),
-        ("cath","CATH classification",'<span style="color:#E85D24">&#9632;</span> mainly alpha &nbsp;<span style="color:#1D6FAE">&#9632;</span> mainly beta &nbsp;<span style="color:#1D9E75">&#9632;</span> alpha/beta &nbsp;<span style="color:#BA7517">&#9632;</span> few secondary &nbsp;&middot; Struct opacity = lDDT'),
-        ("pdb","PDB hits",'<span style="color:#3B82F6">&#9632;</span> seq &nbsp;<span style="color:#0F6E56">&#9632;</span> struct &nbsp;<span style="color:#7F77DD">&#9632;</span> profile &nbsp;&middot; hover for residue range'),
+        ("scope","SCOPe classification per arm",
+         " ".join(f'<span style="color:{SCOP_COLORS.get(k,"#888")}">&#9632;</span> {k}' for k in SCOP_CLASSES)),
+        ("cath","CATH classification per arm",
+         '<span style="color:#E85D24">&#9632;</span> mainly alpha &nbsp;'
+         '<span style="color:#1D6FAE">&#9632;</span> mainly beta &nbsp;'
+         '<span style="color:#1D9E75">&#9632;</span> alpha/beta &nbsp;'
+         '<span style="color:#BA7517">&#9632;</span> few secondary &nbsp;&middot; struct opacity = lDDT'),
+        ("pdb","PDB hits per arm",
+         '<span style="color:#3B82F6">&#9632;</span> seq &nbsp;'
+         '<span style="color:#0F6E56">&#9632;</span> struct &nbsp;'
+         '<span style="color:#7F77DD">&#9632;</span> profile (top 21, 3 rows of 7) &nbsp;&middot; hover for details'),
     ]:
-        st.markdown(f'<div style="font-size:13px;font-weight:500;margin:10px 0 2px">{title} per arm</div><div style="font-size:10px;color:#999;margin-bottom:4px">{legend}</div>', unsafe_allow_html=True)
-        html = _map_row("Seq","#3B82F6",_seg(df_seq,seq_len,"seq",mode),seq_len)
-        html += _map_row("Struct","#0F6E56",_seg(df_str,seq_len,"str",mode),seq_len)
-        html += _map_row("Profile","#7F77DD",_seg(df_hh,seq_len,"hh",mode),seq_len)
+        st.markdown(
+            f'<div style="font-size:13px;font-weight:500;margin:10px 0 2px">{title}</div>'
+            f'<div style="font-size:10px;color:#999;margin-bottom:4px">{legend}</div>',
+            unsafe_allow_html=True
+        )
+        html  = _map_tooltip_bar()
+        html += _map_row("Seq",    "#3B82F6", _seg(df_seq, seq_len, "seq", mode), seq_len)
+        html += _map_row("Struct", "#0F6E56", _seg(df_str, seq_len, "str", mode), seq_len)
+        # Profile: always 3 sub-rows, empty rows show as blank bar
+        html += _map_row("Prof", "#7F77DD",
+                         _seg(df_hh, seq_len, "hh", mode, 0, 7), seq_len, "1-7")
+        html += _map_row("Prof", "#7F77DD",
+                         _seg(df_hh, seq_len, "hh", mode, 7, 14) if n_hh > 7 else [],
+                         seq_len, "8-14")
+        html += _map_row("Prof", "#7F77DD",
+                         _seg(df_hh, seq_len, "hh", mode, 14, 21) if n_hh > 14 else [],
+                         seq_len, "15-21")
         st.markdown(html, unsafe_allow_html=True)
+
 
 def render_compact_summary(df_seq, df_str, df_hh, fused, seq_len):
     lk = lookup.all_domains()
