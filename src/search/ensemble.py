@@ -286,7 +286,9 @@ def fuse_results_three(
         score = w_seq * seq_norm.get(sh["domain"], 0)
 
         seq_sccs = sh["sccs"] if sh["sccs"] not in ("—","?","") else "?"
-        seq_cls  = seq_sccs[0] if seq_sccs != "?" else "?"
+        # Strip ~ prefix (CATH-inferred) for voting comparison
+        seq_sccs_clean = seq_sccs.lstrip("~") if seq_sccs != "?" else "?"
+        seq_cls  = seq_sccs_clean[0] if seq_sccs_clean != "?" else "?"
         seq_cath = sh["cath_code"] or ""
         seq_pdb  = sh["domain"][1:5].lower() if len(sh["domain"]) >= 5 else ""
         arm_sccs  = [seq_sccs]   # full sccs per arm e.g. "a.1.1.2"
@@ -310,8 +312,9 @@ def fuse_results_three(
             votes += 1
             score += w_hh * hh_norm.get(best_hh["domain"], 0)
             hh_sccs = best_hh["sccs"] if best_hh["sccs"] not in ("—","?","") else "?"
-            hh_cls  = hh_sccs[0] if hh_sccs != "?" else "?"
-            arm_sccs.append(hh_sccs)
+            hh_sccs_clean = hh_sccs.lstrip("~") if hh_sccs != "?" else "?"
+            hh_cls  = hh_sccs_clean[0] if hh_sccs_clean != "?" else "?"
+            arm_sccs.append(hh_sccs_clean)   # use clean sccs for consensus
             arm_classes.append(hh_cls)
             arm_caths.append(best_hh.get("cath_code", "") or "")
             arm_pdbs.append(best_hh["pdb"][:4].lower() if best_hh.get("pdb") else "")

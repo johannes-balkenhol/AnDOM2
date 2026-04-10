@@ -227,15 +227,15 @@ def render_three_domain_maps(df_seq, df_str, df_hh, seq_len):
         html  = _map_tooltip_bar()
         html += _map_row("Seq",    "#3B82F6", _seg(df_seq, seq_len, "seq", mode), seq_len)
         html += _map_row("Struct", "#0F6E56", _seg(df_str, seq_len, "str", mode), seq_len)
-        # Profile: always 3 sub-rows, empty rows show as blank bar
+        # Profile: 3 sub-rows of 3 hits each (9 total) — avoids label overlap
         html += _map_row("Prof", "#7F77DD",
-                         _seg(df_hh, seq_len, "hh", mode, 0, 7), seq_len, "1-7")
+                         _seg(df_hh, seq_len, "hh", mode, 0, 3), seq_len, "1-3")
         html += _map_row("Prof", "#7F77DD",
-                         _seg(df_hh, seq_len, "hh", mode, 7, 14) if n_hh > 7 else [],
-                         seq_len, "8-14")
+                         _seg(df_hh, seq_len, "hh", mode, 3, 6) if n_hh > 3 else [],
+                         seq_len, "4-6")
         html += _map_row("Prof", "#7F77DD",
-                         _seg(df_hh, seq_len, "hh", mode, 14, 21) if n_hh > 14 else [],
-                         seq_len, "15-21")
+                         _seg(df_hh, seq_len, "hh", mode, 6, 9) if n_hh > 6 else [],
+                         seq_len, "7-9")
         st.markdown(html, unsafe_allow_html=True)
 
 
@@ -255,16 +255,24 @@ def render_compact_summary(df_seq, df_str, df_hh, fused, seq_len):
     }
 
     def _hh_sccs_resolved(r):
-        """Return best sccs label for HHblits hit — fallback to CATH class name if ?."""
-        sccs = str(r.get("sccs","?"))
-        if sccs not in ("—","?",""):
+        """Return (display_label, class_letter) for HHblits hit."""
+        sccs   = str(r.get("sccs","?"))
+        source = str(r.get("sccs_source",""))
+        cc     = str(r.get("cath_code",""))
+        # Direct SCOPe hit from HHsearch vs ASTRAL
+        if sccs not in ("—","?","") and not sccs.startswith("~"):
             return sccs, sccs[0]
-        cc = str(r.get("cath_code",""))
+        # CATH-inferred (~c)
+        if sccs.startswith("~"):
+            cls = sccs[1:2]
+            c1  = cc.split(".")[0] if cc and cc not in ("—","?") else "?"
+            return f"~{cls} (CATH-inferred)", cls
+        # Try CATH code fallback
         if cc and cc not in ("—","?",""):
             c1  = cc.split(".")[0]
             cls = {"1":"a","2":"b","3":"c","4":"g"}.get(c1,"?")
-            return f"CATH class {CATH_NAMES_FULL.get(c1, c1)}", cls
-        return "unknown (not in SCOPe ASTRAL)", "?"
+            return f"~{cls} (CATH-inferred)", cls
+        return "? (novel/unannotated)", "?"
 
     # Column headers
     hdr, sc, tc, pc = st.columns([1.1, 2.3, 2.3, 2.3])
@@ -446,39 +454,103 @@ def render_compact_summary(df_seq, df_str, df_hh, fused, seq_len):
     st.caption("Each arm searches a different database — PDB IDs may differ but represent the same fold. Ensemble matches by query region overlap.")
 
 
-    # Ensemble verdict
+    # Ensemble verdict — prominent card with links
     if not fused.empty:
         st.markdown("---")
-        top=fused.iloc[0]; ev=top.get("evidence",""); votes=int(top.get("votes",0))
-        conf_color={"all_three":"#1D9E75","two_arms":"#BA7517"}.get(ev,"#888780")
-        conf_label={"all_three":"All three arms agree — highest confidence","two_arms":"Two arms agree — high confidence","seq_only":"Sequence arm only","struct_only":"Structure arm only (dark proteome)","hhblits_only":"Profile arm only (twilight zone)"}.get(ev,ev)
-        agreed_sccs=top.get("agreed_sccs",top.get("sccs","—")); agreed_cath=top.get("agreed_cath",top.get("cath_code","—"))
-        score=float(top.get("ensemble_score",0)); arms_cls=top.get("arms_classes","")
+        top  = fused.iloc[0]
+        ev   = top.get("evidence",""); votes = int(top.get("votes",0))
+        conf_color = {"all_three":"#1D9E75","two_arms":"#BA7517"}.get(ev,"#888780")
+        conf_label = {
+            "all_three":    "All three arms agree — highest confidence",
+            "two_arms":     "Two arms agree — high confidence",
+            "seq_only":     "Sequence arm only",
+            "struct_only":  "Structure arm only (dark proteome)",
+            "hhblits_only": "Profile arm only (twilight zone)",
+        }.get(ev, ev)
+
+        # Clean consensus values — strip ~ prefix for display
+        agreed_sccs_raw = top.get("agreed_sccs", top.get("sccs","—"))
+        agreed_sccs = agreed_sccs_raw.lstrip("~") if agreed_sccs_raw else "—"
+        agreed_cath = top.get("agreed_cath", top.get("cath_code","—"))
+        score       = float(top.get("ensemble_score",0))
+        arms_cls    = top.get("arms_classes","")
+
+        # Links
+        sccs_url = f"https://scop.berkeley.edu/search?sortField=10&val={agreed_sccs}" if agreed_sccs not in ("—","?") else "#"
+        cath_url = f"https://www.cathdb.info/version/v4_3_0/superfamily/{agreed_cath}" if agreed_cath not in ("—","?","") else "#"
+
+        # Top PDB hit for link
+        top_pdb_scope = pdb_from_scope(str(top.get("scope_domain","")))
+        top_pdb_hh    = str(top.get("hh_hit",""))[:4].lower()
+        top_pdb_str   = str(top.get("cath_domain",""))[:4].lower()
+        top_pdb       = top_pdb_scope or top_pdb_str or top_pdb_hh
+        pdb_url_top   = f"https://www.rcsb.org/structure/{top_pdb.upper()}" if top_pdb else "#"
+
         st.markdown(
-            f'<div style="background:var(--color-background-secondary);border-left:5px solid {conf_color};border-radius:0 10px 10px 0;padding:14px 18px;margin-top:8px">'
-            f'<div style="font-weight:700;font-size:15px;color:{conf_color}">Ensemble: {votes}/3 votes · {conf_label}</div>'
-            f'<div style="font-size:13px;margin-top:6px"><b>SCOPe consensus:</b> {agreed_sccs} &nbsp;·&nbsp; <b>CATH consensus:</b> {agreed_cath} &nbsp;·&nbsp; <b>Score:</b> {score:.3f}</div>'
-            f'<div style="font-size:11px;color:#888;margin-top:4px">Arm classes: {arms_cls} &nbsp;·&nbsp; Score = weighted e-value norm + class agreement bonus when ≥2 arms agree</div>'
-            f'</div>', unsafe_allow_html=True)
-    # Functional annotation
-    top_pdb=""
+            f'<div style="background:var(--color-background-secondary);border-left:5px solid {conf_color};'
+            f'border-radius:0 12px 12px 0;padding:16px 20px;margin-top:8px">'
+            f'<div style="font-weight:700;font-size:16px;color:{conf_color}">'
+            f'Ensemble: {votes}/3 votes &nbsp;·&nbsp; {conf_label}</div>'
+            f'<div style="display:flex;gap:32px;margin-top:10px;flex-wrap:wrap">'
+            f'<div><div style="font-size:10px;color:#aaa;text-transform:uppercase;letter-spacing:0.5px">SCOPe class</div>'
+            f'<a href="{sccs_url}" style="font-size:16px;font-weight:600;text-decoration:none">{agreed_sccs}</a><br>'
+            f'<span style="font-size:11px;color:#888">{SCOP_CLASSES.get(agreed_sccs[0] if agreed_sccs and agreed_sccs not in ("—","?") else "?","")}</span></div>'
+            f'<div><div style="font-size:10px;color:#aaa;text-transform:uppercase;letter-spacing:0.5px">CATH superfamily</div>'
+            f'<a href="{cath_url}" style="font-size:16px;font-weight:600;text-decoration:none">{agreed_cath}</a></div>'
+            f'<div><div style="font-size:10px;color:#aaa;text-transform:uppercase;letter-spacing:0.5px">Top PDB hit</div>'
+            f'<a href="{pdb_url_top}" style="font-size:16px;font-weight:600;text-decoration:none">{top_pdb.upper() if top_pdb else "—"}</a></div>'
+            f'<div><div style="font-size:10px;color:#aaa;text-transform:uppercase;letter-spacing:0.5px">Score</div>'
+            f'<span style="font-size:16px;font-weight:600">{score:.3f}</span></div>'
+            f'</div>'
+            f'<div style="font-size:11px;color:#aaa;margin-top:8px">'
+            f'Arm classes: {arms_cls} &nbsp;·&nbsp; '
+            f'Score = weighted e-value norm + class agreement bonus when ≥2 arms agree'
+            f'</div></div>',
+            unsafe_allow_html=True
+        )
+
+    # Functional annotation — fixed AlphaFold URL (needs UniProt ID not PDB ID)
+    top_pdb = ""
     if not fused.empty:
-        top_pdb=pdb_from_scope(str(fused.iloc[0].get("scope_domain","")))
-        if not top_pdb: top_pdb=str(fused.iloc[0].get("hh_hit",""))[:4].lower()
-    if top_pdb and len(top_pdb)==4:
-        st.markdown(f'<div style="font-size:11px;color:#888;margin:8px 0 2px">Functional annotation for top ensemble hit ({top_pdb.upper()})</div>', unsafe_allow_html=True)
+        top_pdb = pdb_from_scope(str(fused.iloc[0].get("scope_domain","")))
+        if not top_pdb: top_pdb = str(fused.iloc[0].get("hh_hit",""))[:4].lower()
+        if not top_pdb: top_pdb = str(fused.iloc[0].get("cath_domain",""))[:4].lower()
+    if top_pdb and len(top_pdb) == 4:
+        st.markdown(
+            f'<div style="font-size:11px;color:#888;margin:10px 0 2px">'
+            f'Functional annotation for top ensemble hit ({top_pdb.upper()})</div>',
+            unsafe_allow_html=True
+        )
         with st.expander(f"Load UniProt · Pfam · AlphaFold structure — {top_pdb.upper()}", expanded=False):
             with st.spinner(f"Fetching {top_pdb.upper()}…"):
-                info=fetch_pdb_function(top_pdb)
+                info = fetch_pdb_function(top_pdb)
             if info.get("uniprot_id"):
-                uid=info["uniprot_id"]
-                st.markdown(f'**UniProt:** [{uid}](https://www.uniprot.org/uniprot/{uid}) &nbsp;·&nbsp; **Gene:** {info.get("gene","—")} &nbsp;·&nbsp; **Organism:** {info.get("organism","—")}')
-                if info.get("function"): st.markdown(f'_{info["function"][:400]}_')
-                if info.get("pfam"): st.markdown("**Pfam:** " + " · ".join(f'`{p["pfam_id"]}` {p["name"]}' for p in info["pfam"][:4]))
-                st.markdown(f'<iframe src="https://alphafold.ebi.ac.uk/entry/{uid}" width="100%" height="500" style="border:none;border-radius:8px;margin-top:8px" title="AlphaFold {uid}"></iframe>', unsafe_allow_html=True)
+                uid = info["uniprot_id"]
+                st.markdown(
+                    f'**UniProt:** [{uid}](https://www.uniprot.org/uniprot/{uid}) &nbsp;·&nbsp; '
+                    f'**Gene:** {info.get("gene","—")} &nbsp;·&nbsp; '
+                    f'**Organism:** {info.get("organism","—")}'
+                )
+                if info.get("function"):
+                    st.markdown(f'_{info["function"][:400]}_')
+                if info.get("pfam"):
+                    st.markdown("**Pfam:** " + " · ".join(f'`{p["pfam_id"]}` {p["name"]}' for p in info["pfam"][:4]))
+                # AlphaFold uses UniProt accession — this is the correct URL
+                st.markdown(
+                    f'**AlphaFold structure** ([{uid}](https://alphafold.ebi.ac.uk/entry/{uid})):'
+                )
+                st.markdown(
+                    f'<iframe src="https://alphafold.ebi.ac.uk/entry/{uid}" '
+                    f'width="100%" height="520" style="border:none;border-radius:8px;margin-top:4px" '
+                    f'title="AlphaFold structure for {uid}"></iframe>',
+                    unsafe_allow_html=True
+                )
+                st.markdown(
+                    f'[View {top_pdb.upper()} on RCSB PDB](https://www.rcsb.org/structure/{top_pdb.upper()})'
+                )
             else:
-                st.caption(f"No UniProt mapping for {top_pdb.upper()}.")
-                st.markdown(f"[Search RCSB](https://www.rcsb.org/structure/{top_pdb.upper()})")
+                st.caption(f"No UniProt mapping found for {top_pdb.upper()}.")
+                st.markdown(f"[View {top_pdb.upper()} on RCSB PDB](https://www.rcsb.org/structure/{top_pdb.upper()})")
 
 
 
