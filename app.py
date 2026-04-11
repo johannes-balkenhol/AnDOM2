@@ -204,39 +204,120 @@ def _seg(df, seq_len, arm, mode, row_start=0, row_end=None):
 
 
 def render_three_domain_maps(df_seq, df_str, df_hh, seq_len):
-    """Three maps (SCOPe/CATH/PDB). Profile arm split into 3 sub-rows of 7 to avoid overlap."""
-    n_hh = len(df_hh) if df_hh is not None else 0
-    for mode, title, legend in [
-        ("scope","SCOPe classification per arm",
-         " ".join(f'<span style="color:{SCOP_COLORS.get(k,"#888")}">&#9632;</span> {k}' for k in SCOP_CLASSES)),
-        ("cath","CATH classification per arm",
-         '<span style="color:#E85D24">&#9632;</span> mainly alpha &nbsp;'
-         '<span style="color:#1D6FAE">&#9632;</span> mainly beta &nbsp;'
-         '<span style="color:#1D9E75">&#9632;</span> alpha/beta &nbsp;'
-         '<span style="color:#BA7517">&#9632;</span> few secondary &nbsp;&middot; struct opacity = lDDT'),
-        ("pdb","PDB hits per arm",
-         '<span style="color:#3B82F6">&#9632;</span> seq &nbsp;'
-         '<span style="color:#0F6E56">&#9632;</span> struct &nbsp;'
-         '<span style="color:#7F77DD">&#9632;</span> profile (top 21, 3 rows of 7) &nbsp;&middot; hover for details'),
-    ]:
-        st.markdown(
-            f'<div style="font-size:13px;font-weight:500;margin:10px 0 2px">{title}</div>'
-            f'<div style="font-size:10px;color:#999;margin-bottom:4px">{legend}</div>',
-            unsafe_allow_html=True
+    """
+    Classic AnDOM-style domain architecture map.
+    Each hit is its own thin bar row, positioned by query coordinates.
+    Hover tooltip field above shows full annotation on mouseover.
+    Three sections: Sequence arm / Structure arm / Profile arm.
+    """
+    lk = lookup.all_domains()
+    from db.lookup import get_cath_code, cath_code_to_scop_class
+    CATH_C = {"1":"#E85D24","2":"#1D6FAE","3":"#1D9E75","4":"#BA7517"}
+    MAX_HITS_PER_ARM = 10
+    MAX_HITS_PROFILE = 5  # profile arm has 250+ hits — keep bar clean
+
+    def _hit_bar(qs, qe, color, tip, opacity=0.85):
+        """Single hit bar positioned within the sequence."""
+        tip_safe = tip.replace('"',"'").replace("\n"," ")
+        l = (qs / seq_len) * 100
+        w = max(((qe - qs) / seq_len) * 100, 0.8)
+        return (
+            f'<div style="position:absolute;top:1px;left:{l:.2f}%;width:{w:.2f}%;'
+            f'height:14px;background:{color};opacity:{opacity};border-radius:2px;cursor:pointer" '
+            f'onmouseover="var t=document.getElementById(\'tipbar\');'
+            f'if(t){{t.innerHTML=\'{tip_safe}\';t.style.display=\'block\';}}" '
+            f'onmouseout="var t=document.getElementById(\'tipbar\');'
+            f'if(t)t.style.display=\'none\';"></div>'
         )
-        html  = _map_tooltip_bar()
-        html += _map_row("Seq",    "#3B82F6", _seg(df_seq, seq_len, "seq", mode), seq_len)
-        html += _map_row("Struct", "#0F6E56", _seg(df_str, seq_len, "str", mode), seq_len)
-        # Profile: 3 sub-rows of 3 hits each (9 total) — avoids label overlap
-        html += _map_row("Prof", "#7F77DD",
-                         _seg(df_hh, seq_len, "hh", mode, 0, 3), seq_len, "1-3")
-        html += _map_row("Prof", "#7F77DD",
-                         _seg(df_hh, seq_len, "hh", mode, 3, 6) if n_hh > 3 else [],
-                         seq_len, "4-6")
-        html += _map_row("Prof", "#7F77DD",
-                         _seg(df_hh, seq_len, "hh", mode, 6, 9) if n_hh > 6 else [],
-                         seq_len, "7-9")
-        st.markdown(html, unsafe_allow_html=True)
+
+    def _arm_rows(df, arm, max_hits=MAX_HITS_PER_ARM):
+        """Build HTML rows for one arm — one row per hit."""
+        if df is None or len(df) == 0:
+            return '<div style="font-size:11px;color:#bbb;padding:2px 0 4px">no hits</div>'
+        rows_html = ""
+        for i, (_, row) in enumerate(df.head(max_hits).iterrows()):
+            qs = int(row.get("qstart",0)); qe = int(row.get("qend",0))
+            if arm == "seq":
+                cls  = lk.get(str(row["target"]),{}).get("cls","?")
+                sccs = lk.get(str(row["target"]),{}).get("sccs","?")
+                desc = lk.get(str(row["target"]),{}).get("desc","")[:60]
+                c    = SCOP_COLORS.get(cls,"#888"); o = 0.85
+                tip  = f"SCOPe: {sccs} | E: {fmt_e(row['evalue'])} | pos: {qs}-{qe} | {desc}"
+            elif arm == "str":
+                cc   = get_cath_code(str(row["target"]))
+                cls  = cath_code_to_scop_class(cc) if cc else "?"
+                lddt = float(row.get("lddt",0.7))
+                c    = SCOP_COLORS.get(cls,"#888"); o = 0.5+0.5*lddt
+                tip  = f"SCOPe class: {cls} (via CATH:{cc}) | lDDT: {lddt:.2f} | E: {fmt_e(row['evalue'])} | pos: {qs}-{qe}"
+            else:
+                sccs = str(row.get("sccs","?"))
+                cls  = sccs[0] if sccs not in ("—","?","") and not sccs.startswith("~") else "?"
+                if cls == "?":
+                    cc = str(row.get("cath_code",""))
+                    if cc and cc not in ("—","?"):
+                        cls = {"1":"a","2":"b","3":"c","4":"g"}.get(cc.split(".")[0],"?")
+                prob = float(row.get("prob",50))/100
+                c    = SCOP_COLORS.get(cls,"#888"); o = 0.35+0.65*prob
+                name = str(row.get("hit_name",row.get("pdb","")))
+                tip  = f"HHblits: {name} | SCOPe: {sccs} | prob: {float(row.get('prob',0)):.0f}% | E: {fmt_e(row['evalue'])} | pos: {qs}-{qe}"
+            rows_html += (
+                f'<div style="position:relative;height:16px;background:#f0f2f6;'
+                f'border-radius:3px;margin-bottom:2px;border:1px solid #e8e8e8">'
+                f'{_hit_bar(qs, qe, c, tip, o)}</div>'
+            )
+        return rows_html
+
+    # ── Build the full map HTML ───────────────────────────────────────────────
+    legend_scope = " ".join(
+        f'<span style="color:{SCOP_COLORS.get(k,"#888")}">&#9632;</span> {k}'
+        for k in SCOP_CLASSES
+    )
+
+    html = (
+        # Tooltip bar
+        '<div id="tipbar" style="display:none;background:#222;color:#fff;font-size:11px;'
+        'padding:4px 10px;border-radius:4px;margin-bottom:6px;font-family:monospace;'
+        'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%"></div>'
+        # Sequence ruler
+        f'<div style="font-size:10px;color:#aaa;margin-bottom:8px">'
+        f'Mouse over bars for annotation details &nbsp;·&nbsp; Total length: {seq_len} aa'
+        f'</div>'
+    )
+
+    # Position ruler ticks
+    ticks = ""
+    for pct in [0, 25, 50, 75, 100]:
+        aa = int(pct * seq_len / 100)
+        ticks += (f'<span style="position:absolute;left:{pct}%;font-size:9px;'
+                  f'color:#ccc;transform:translateX(-50%)">{aa}</span>')
+    html += (
+        f'<div style="position:relative;height:14px;margin-bottom:4px">'
+        f'<div style="position:absolute;top:7px;left:0;right:0;height:1px;background:#e0e0e0"></div>'
+        f'{ticks}</div>'
+    )
+
+    # Three arm sections
+    arms = [
+        ("Sequence arm", "#3B82F6", df_seq, "seq", MAX_HITS_PER_ARM),
+        ("Structure arm", "#0F6E56", df_str, "str", MAX_HITS_PER_ARM),
+        ("Profile arm", "#7F77DD", df_hh, "hh", MAX_HITS_PROFILE),
+    ]
+    for arm_label, arm_color, df_arm, arm_key, max_h in arms:
+        n = len(df_arm) if df_arm is not None else 0
+        shown = min(n, max_h)
+        html += (
+            f'<div style="display:flex;align-items:flex-start;margin-bottom:6px">'
+            f'<div style="width:80px;flex-shrink:0;padding-top:2px">'
+            f'<span style="font-size:11px;font-weight:500;color:{arm_color}">{arm_label}</span><br>'
+            f'<span style="font-size:9px;color:#bbb">top {shown}/{n}</span>'
+            f'</div>'
+            f'<div style="flex:1">'
+            f'{_arm_rows(df_arm, arm_key, max_h)}'
+            f'</div></div>'
+        )
+
+    html += f'<div style="font-size:10px;color:#bbb;margin-top:4px">{legend_scope}</div>'
+    st.markdown(html, unsafe_allow_html=True)
 
 
 def render_compact_summary(df_seq, df_str, df_hh, fused, seq_len):
