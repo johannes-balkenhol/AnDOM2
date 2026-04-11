@@ -314,7 +314,8 @@ def render_compact_summary(df_seq, df_str, df_hh, fused, seq_len):
             st.markdown(
                 f'<span style="color:{col};font-size:16px">●</span> '
                 f'<span style="font-weight:600;font-size:13px">class {cls}</span><br>'
-                f'<span style="font-size:11px;color:#666">{SCOP_CLASSES.get(cls,cls)} (via CATH crosswalk)</span><br>'
+                f'<span style="font-size:11px;color:#666">{SCOP_CLASSES.get(cls,cls)}</span><br>'
+                f'<span style="font-size:10px;color:#BA7517">class level only — CATH→SCOPe crosswalk</span><br>'
                 f'<span style="font-size:11px;color:#aaa">{rng} · </span>'
                 f'<span style="font-size:11px;color:{lc}">lDDT={float(r.get("lddt",0)):.2f}</span>',
                 unsafe_allow_html=True
@@ -476,7 +477,7 @@ def render_compact_summary(df_seq, df_str, df_hh, fused, seq_len):
         arms_cls    = top.get("arms_classes","")
 
         # Links
-        sccs_url = f"https://scop.berkeley.edu/search?sortField=10&val={agreed_sccs}" if agreed_sccs not in ("—","?") else "#"
+        sccs_url = f"https://scop.berkeley.edu/search/?key={agreed_sccs}" if agreed_sccs not in ("—","?") else "#"
         cath_url = f"https://www.cathdb.info/version/v4_3_0/superfamily/{agreed_cath}" if agreed_cath not in ("—","?","") else "#"
 
         # Top PDB hit for link
