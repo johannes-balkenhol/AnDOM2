@@ -98,10 +98,22 @@ def run_hhblits(
                     # Try looking up by PDB code
                     sccs = lookup.pdb_to_sccs(dom[1:5])
                 if sccs:
-                    # Key by query region (qstart-qend) so we can match to PDB70 hits
-                    key = f"{sh['qstart']}-{sh['qend']}"
-                    if key not in sccs_map:
-                        sccs_map[key] = sccs
+                    # Store by region — use (qstart, qend) tuple for overlap matching
+                    sccs_map[(sh['qstart'], sh['qend'])] = sccs
+
+    def _find_sccs_by_overlap(qs, qe, min_overlap=0.5):
+        """Find best sccs from SCOPe HHsearch results by region overlap."""
+        best = ""
+        best_ov = 0.0
+        for (s, e), sccs in sccs_map.items():
+            overlap = max(0, min(qe, e) - max(qs, s))
+            shorter = min(qe - qs, e - s)
+            if shorter > 0:
+                ov = overlap / shorter
+                if ov >= min_overlap and ov > best_ov:
+                    best_ov = ov
+                    best = sccs
+        return best
 
     # ── Annotate PDB70 hits with best available SCOPe sccs ──────────────────
     # Priority: 1) direct PDB→SCOPe, 2) SCOPe HHsearch by region, 3) CATH crosswalk
@@ -118,8 +130,7 @@ def run_hhblits(
             return sccs, SCOP_CLASS_NAMES.get(sccs[0], "—"), "direct"
 
         # 2. SCOPe HHsearch result for overlapping region
-        key = f"{qs}-{qe}"
-        sccs = sccs_map.get(key, "")
+        sccs = _find_sccs_by_overlap(qs, qe)
         if sccs:
             return sccs, SCOP_CLASS_NAMES.get(sccs[0], "—"), "hhsearch_scop"
 
@@ -138,6 +149,14 @@ def run_hhblits(
     df["class_name"]  = enriched[1]
     df["sccs_source"] = enriched[2]
     df["cath_code"]   = df["pdb"].map(lambda x: lookup.pdb_to_cath_code(x) or "—")
+
+    # Sort by SCOPe annotation quality: direct > hhsearch_scop > cath_inferred > unknown
+    # Within each quality tier, keep original rank order (by prob/evalue)
+    source_rank = {"direct": 0, "hhsearch_scop": 1, "cath_inferred": 2, "unknown": 3}
+    df["_src_rank"] = df["sccs_source"].map(lambda x: source_rank.get(x, 3))
+    df = df.sort_values(["_src_rank", df.index.to_series().rename("orig")],
+                        ascending=[True, True]).drop(columns=["_src_rank"])
+    df = df.reset_index(drop=True)
 
     return df, None
 
