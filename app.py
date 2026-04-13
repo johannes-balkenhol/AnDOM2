@@ -57,10 +57,10 @@ BATCH_EXAMPLES = {
     "multidomain": {
         "label": "Multi-domain",
         "fasta": (
-            ">Src_SH2_SH3\nMGSNKSKPKDASQRRRSLEPAENVHGAGGGAFPASQTPSKPASADGHRGPSAAFAPAAAEKVLFGGFNSSDTVTSPQRAGPLAGGVTTFVALYDYESRTETDLSFKKGERLQIVNNTEGDWWLAHSLSTGQTGYIPSNYW\n"
+            ">Src_SH2_SH3\nMGSNKSKPKDASQRRRSLEPAENVHGAGGGAFPASQTPSKPASADGHRGPSAAFAPAAAEKVLFGGFNSSDTVTSPQRAGPLAGGVTTFVALYDYESRTETDLSFKKGERLQIVNNTEGDWWLAHSLSTGQTGYIPSNYWAGNEKINGQEPIPKAKIKALRQLRISDDAHERVEFDQENPAQVAREAFVSELDMHLNYGQSSANFYFKQLFKKSGESNEEVAENYLEHLGDSWRRFQPSFDPTKNPGYEIVNQIKTCTDDFRGMECGKEPYASEMTRIIREALQKLQKQRGGIEYMQKQGKDHSMSHSV\n"
             ">p53_DBD\nSVVRCPHHERCSDSDGLAPPQHLIRVEGNLRVEYLDDRNTFRHSVVVPYEPPEVGSDCTTIHYNYMCNSSCMGQMNRRPILTIITLEDSSGKLLGRNSFEVRVCACPGRDRRTEEENLRKKGEVVAPQHL\n"
         ),
-        "desc": "Multi-domain proteins — ensemble shows both domains.",
+        "desc": "Multi-domain proteins — Src SH3 (all-alpha, a.118.1) + SH2 (all-beta, b.34.2.1) + p53 DNA-binding domain (beta-sandwich).",
     },
 }
 
@@ -205,434 +205,263 @@ def _seg(df, seq_len, arm, mode, row_start=0, row_end=None):
 
 def render_three_domain_maps(df_seq, df_str, df_hh, seq_len):
     """
-    Classic AnDOM-style domain architecture map.
-    Each hit is its own thin bar row, positioned by query coordinates.
-    Hover tooltip field above shows full annotation on mouseover.
-    Three sections: Sequence arm / Structure arm / Profile arm.
+    Domain architecture bar using st.components.v1.html so JS hover works.
+    Shows top 3 hits per arm, deduplicated by region (top-1 per cluster).
+    Color = SCOPe class. Opacity = confidence (e-value / lDDT / prob).
     """
+    import streamlit.components.v1 as components
+    from search.ensemble import cluster_hits_by_region
     lk = lookup.all_domains()
     from db.lookup import get_cath_code, cath_code_to_scop_class
-    CATH_C = {"1":"#E85D24","2":"#1D6FAE","3":"#1D9E75","4":"#BA7517"}
-    MAX_HITS_PER_ARM = 10
-    MAX_HITS_PROFILE = 5  # profile arm has 250+ hits — keep bar clean
 
-    def _hit_bar(qs, qe, color, tip, opacity=0.85):
-        """Single hit bar positioned within the sequence."""
-        tip_safe = tip.replace('"',"'").replace("\n"," ")
-        l = (qs / seq_len) * 100
-        w = max(((qe - qs) / seq_len) * 100, 0.8)
-        return (
-            f'<div style="position:absolute;top:1px;left:{l:.2f}%;width:{w:.2f}%;'
-            f'height:14px;background:{color};opacity:{opacity};border-radius:2px;cursor:pointer" '
-            f'onmouseover="var t=document.getElementById(\'tipbar\');'
-            f'if(t){{t.innerHTML=\'{tip_safe}\';t.style.display=\'block\';}}" '
-            f'onmouseout="var t=document.getElementById(\'tipbar\');'
-            f'if(t)t.style.display=\'none\';"></div>'
-        )
+    MAX_PER_ARM = 3
 
-    def _arm_rows(df, arm, max_hits=MAX_HITS_PER_ARM):
-        """Build HTML rows for one arm — one row per hit."""
+    def _dedup_top(df, arm):
+        """Return top-1 hit per region cluster — max MAX_PER_ARM rows."""
         if df is None or len(df) == 0:
-            return '<div style="font-size:11px;color:#bbb;padding:2px 0 4px">no hits</div>'
-        rows_html = ""
-        for i, (_, row) in enumerate(df.head(max_hits).iterrows()):
-            qs = int(row.get("qstart",0)); qe = int(row.get("qend",0))
-            if arm == "seq":
-                cls  = lk.get(str(row["target"]),{}).get("cls","?")
-                sccs = lk.get(str(row["target"]),{}).get("sccs","?")
-                desc = lk.get(str(row["target"]),{}).get("desc","")[:60]
-                c    = SCOP_COLORS.get(cls,"#888"); o = 0.85
-                tip  = f"SCOPe: {sccs} | E: {fmt_e(row['evalue'])} | pos: {qs}-{qe} | {desc}"
-            elif arm == "str":
-                cc   = get_cath_code(str(row["target"]))
-                cls  = cath_code_to_scop_class(cc) if cc else "?"
-                lddt = float(row.get("lddt",0.7))
-                c    = SCOP_COLORS.get(cls,"#888"); o = 0.5+0.5*lddt
-                tip  = f"SCOPe class: {cls} (via CATH:{cc}) | lDDT: {lddt:.2f} | E: {fmt_e(row['evalue'])} | pos: {qs}-{qe}"
-            else:
-                sccs = str(row.get("sccs","?"))
-                cls  = sccs[0] if sccs not in ("—","?","") and not sccs.startswith("~") else "?"
-                if cls == "?":
-                    cc = str(row.get("cath_code",""))
-                    if cc and cc not in ("—","?"):
-                        cls = {"1":"a","2":"b","3":"c","4":"g"}.get(cc.split(".")[0],"?")
-                prob = float(row.get("prob",50))/100
-                c    = SCOP_COLORS.get(cls,"#888"); o = 0.35+0.65*prob
-                name = str(row.get("hit_name",row.get("pdb","")))
-                tip  = f"HHblits: {name} | SCOPe: {sccs} | prob: {float(row.get('prob',0)):.0f}% | E: {fmt_e(row['evalue'])} | pos: {qs}-{qe}"
-            rows_html += (
-                f'<div style="position:relative;height:16px;background:#f0f2f6;'
-                f'border-radius:3px;margin-bottom:2px;border:1px solid #e8e8e8">'
-                f'{_hit_bar(qs, qe, c, tip, o)}</div>'
-            )
-        return rows_html
+            return []
+        clusters = cluster_hits_by_region(df, min_overlap=0.6)
+        result = []
+        for _, _, sub in clusters[:MAX_PER_ARM]:
+            result.append(sub.iloc[0])
+        return result
 
-    # ── Build the full map HTML ───────────────────────────────────────────────
-    legend_scope = " ".join(
-        f'<span style="color:{SCOP_COLORS.get(k,"#888")}">&#9632;</span> {k}'
-        for k in SCOP_CLASSES
-    )
+    def _seg(row, arm):
+        qs = int(row.get("qstart",0)); qe = int(row.get("qend",0))
+        l  = (qs / seq_len) * 100
+        w  = max(((qe - qs) / seq_len) * 100, 0.8)
+        if arm == "seq":
+            cls  = lk.get(str(row.get("target","")),{}).get("cls","?")
+            sccs = lk.get(str(row.get("target","")),{}).get("sccs","?")
+            desc = lk.get(str(row.get("target","")),{}).get("desc","")[:55]
+            c    = SCOP_COLORS.get(cls,"#888"); o = 0.85
+            tip  = f"SCOPe: {sccs} | E: {fmt_e(row.get('evalue',1))} | {qs}-{qe} aa | {desc}"
+        elif arm == "str":
+            cc   = get_cath_code(str(row.get("target","")))
+            cls  = cath_code_to_scop_class(cc) if cc else "?"
+            lddt = float(row.get("lddt",0.7))
+            c    = SCOP_COLORS.get(cls,"#888"); o = 0.5+0.5*lddt
+            tip  = f"CATH: {cc} | class {cls} | lDDT: {lddt:.2f} | {qs}-{qe} aa"
+        else:
+            sccs = str(row.get("sccs","?"))
+            cls  = sccs[0] if sccs not in ("—","?","") and not sccs.startswith("~") else "?"
+            if cls == "?":
+                cc2 = str(row.get("cath_code",""))
+                if cc2 and cc2 not in ("—","?"):
+                    cls = {"1":"a","2":"b","3":"c","4":"g"}.get(cc2.split(".")[0],"?")
+            prob = float(row.get("prob",50))/100; c = SCOP_COLORS.get(cls,"#888"); o = 0.35+0.65*prob
+            name = str(row.get("hit_name",row.get("pdb","")))
+            tip  = f"HHblits: {name} | SCOPe: {sccs} | prob: {prob*100:.0f}% | {qs}-{qe} aa"
+        tip_safe = tip.replace("'","&#39;").replace('"',"&quot;")
+        return f'<div onmouseenter="T(\'{tip_safe}\')" onmouseleave="T(\'\')" style="position:absolute;top:1px;left:{l:.2f}%;width:{w:.2f}%;height:12px;background:{c};opacity:{o:.2f};border-radius:2px;cursor:default"></div>'
 
-    html = (
-        # Tooltip bar
-        '<div id="tipbar" style="display:none;background:#222;color:#fff;font-size:11px;'
-        'padding:4px 10px;border-radius:4px;margin-bottom:6px;font-family:monospace;'
-        'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%"></div>'
-        # Sequence ruler
-        f'<div style="font-size:10px;color:#aaa;margin-bottom:8px">'
-        f'Mouse over bars for annotation details &nbsp;·&nbsp; Total length: {seq_len} aa'
-        f'</div>'
-    )
-
-    # Position ruler ticks
-    ticks = ""
-    for pct in [0, 25, 50, 75, 100]:
-        aa = int(pct * seq_len / 100)
-        ticks += (f'<span style="position:absolute;left:{pct}%;font-size:9px;'
-                  f'color:#ccc;transform:translateX(-50%)">{aa}</span>')
-    html += (
-        f'<div style="position:relative;height:14px;margin-bottom:4px">'
-        f'<div style="position:absolute;top:7px;left:0;right:0;height:1px;background:#e0e0e0"></div>'
-        f'{ticks}</div>'
-    )
-
-    # Three arm sections
-    arms = [
-        ("Sequence arm", "#3B82F6", df_seq, "seq", MAX_HITS_PER_ARM),
-        ("Structure arm", "#0F6E56", df_str, "str", MAX_HITS_PER_ARM),
-        ("Profile arm", "#7F77DD", df_hh, "hh", MAX_HITS_PROFILE),
-    ]
-    for arm_label, arm_color, df_arm, arm_key, max_h in arms:
-        n = len(df_arm) if df_arm is not None else 0
-        shown = min(n, max_h)
-        html += (
-            f'<div style="display:flex;align-items:flex-start;margin-bottom:6px">'
-            f'<div style="width:80px;flex-shrink:0;padding-top:2px">'
-            f'<span style="font-size:11px;font-weight:500;color:{arm_color}">{arm_label}</span><br>'
-            f'<span style="font-size:9px;color:#bbb">top {shown}/{n}</span>'
+    def _arm_html(rows, arm, label, color):
+        n_total = len(rows)
+        inner = "".join(_seg(r, arm) for r in rows) if rows else '<span style="font-size:10px;color:#bbb;padding-left:4px">no hits</span>'
+        return (
+            f'<div style="display:flex;align-items:flex-start;margin-bottom:5px">'
+            f'<div style="width:78px;flex-shrink:0;padding-top:1px">'
+            f'<span style="font-size:11px;font-weight:500;color:{color}">{label}</span>'
+            f'<span style="font-size:9px;color:#bbb;margin-left:4px">top {min(n_total,MAX_PER_ARM)}</span>'
             f'</div>'
             f'<div style="flex:1">'
-            f'{_arm_rows(df_arm, arm_key, max_h)}'
-            f'</div></div>'
+            + "".join(
+                f'<div style="position:relative;height:14px;background:#f1f3f8;border-radius:2px;margin-bottom:2px;border:0.5px solid #e4e6ea">'
+                f'{_seg(rows[i], arm)}</div>'
+                for i in range(len(rows))
+            )
+            + (f'<div style="font-size:10px;color:#bbb;padding:2px 0">no hits</div>' if not rows else "")
+            + f'</div></div>'
         )
 
-    html += f'<div style="font-size:10px;color:#bbb;margin-top:4px">{legend_scope}</div>'
-    st.markdown(html, unsafe_allow_html=True)
+    # Dedup per arm
+    seq_rows = _dedup_top(df_seq, "seq")
+    str_rows = _dedup_top(df_str, "str")
+    hh_rows  = _dedup_top(df_hh,  "hh")
+
+    # Ruler ticks
+    ticks = "".join(
+        f'<span style="position:absolute;left:{p}%;font-size:9px;color:#ccc;transform:translateX(-50%)">{int(p*seq_len/100)}</span>'
+        for p in [0, 25, 50, 75, 100]
+    )
+    legend = " &nbsp;".join(
+        f'<span style="color:{SCOP_COLORS.get(k,"#888")}">&#9632;</span>{k}' for k in SCOP_CLASSES
+    )
+
+    html = f"""<!DOCTYPE html><html><head><meta charset="utf-8">
+<style>body{{margin:0;padding:4px 0;font-family:-apple-system,sans-serif;background:transparent}}</style>
+</head><body>
+<div id="tip" style="height:18px;font-size:11px;font-family:monospace;color:#555;margin-bottom:6px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></div>
+<div style="font-size:10px;color:#aaa;margin-bottom:6px">
+  Mouse over bars for annotation details &nbsp;·&nbsp; Total length: {seq_len} aa
+</div>
+<div style="position:relative;height:14px;margin-bottom:6px">
+  <div style="position:absolute;top:7px;left:0;right:0;height:0.5px;background:#d8dce4"></div>
+  {ticks}
+</div>
+{_arm_html(seq_rows, "seq", "Seq arm",     "#3B82F6")}
+{_arm_html(str_rows, "str", "Struct arm",  "#0F6E56")}
+{_arm_html(hh_rows,  "hh",  "Profile arm", "#7F77DD")}
+<div style="font-size:10px;color:#bbb;margin-top:4px">{legend}</div>
+<script>function T(s){{document.getElementById('tip').textContent=s||'';}}</script>
+</body></html>"""
+
+    n_rows = len(seq_rows) + len(str_rows) + len(hh_rows)
+    height = 80 + n_rows * 18
+    components.html(html, height=height, scrolling=False)
+
 
 
 def render_compact_summary(df_seq, df_str, df_hh, fused, seq_len):
+    from db.lookup import get_cath_code, cath_code_to_scop_class
+    from search.ensemble import get_domain_clusters
     lk = lookup.all_domains()
-    from db.lookup import get_cath_code, cath_code_to_scop_class
+
     render_three_domain_maps(df_seq, df_str, df_hh, seq_len)
-    # ── Top-1 per arm and category ────────────────────────────────────────────
-    st.markdown('<div style="font-size:13px;font-weight:500;margin-bottom:10px">Top-1 per arm and category</div>', unsafe_allow_html=True)
 
-    from db.lookup import get_cath_code, cath_code_to_scop_class
-    CATH_NAMES_FULL = {
-        "1": "Mainly alpha",
-        "2": "Mainly beta",
-        "3": "Alpha/beta (mixed barrel)",
-        "4": "Few secondary structures",
+    # ── Per-domain ensemble cards ─────────────────────────────────────────────
+    domains = get_domain_clusters(df_seq, df_str, df_hh, min_overlap=0.6)
+
+    # Fallback: if clustering gives 0 domains (all arms empty), skip
+    if not domains:
+        st.caption("No domain hits found.")
+        return
+
+    n_domains = len(domains)
+    multi = n_domains > 1
+
+    SCOP_FULL = {
+        "a":"All alpha","b":"All beta","c":"Alpha/beta","d":"Alpha+beta",
+        "e":"Multi-domain","f":"Membrane","g":"Small proteins"
     }
+    CATH_FULL = {"1":"Mainly alpha","2":"Mainly beta","3":"Alpha/beta","4":"Few secondary"}
 
-    def _hh_sccs_resolved(r):
-        """Return (display_label, class_letter) for HHblits hit."""
-        sccs   = str(r.get("sccs","?"))
-        source = str(r.get("sccs_source",""))
-        cc     = str(r.get("cath_code",""))
-        # Direct SCOPe hit from HHsearch vs ASTRAL
-        if sccs not in ("—","?","") and not sccs.startswith("~"):
-            return sccs, sccs[0]
-        # CATH-inferred (~c)
-        if sccs.startswith("~"):
-            cls = sccs[1:2]
-            c1  = cc.split(".")[0] if cc and cc not in ("—","?") else "?"
-            return f"~{cls} (CATH-inferred)", cls
-        # Try CATH code fallback
-        if cc and cc not in ("—","?",""):
-            c1  = cc.split(".")[0]
-            cls = {"1":"a","2":"b","3":"c","4":"g"}.get(c1,"?")
-            return f"~{cls} (CATH-inferred)", cls
-        return "? (novel/unannotated)", "?"
+    if multi:
+        st.markdown(
+            f'<div style="font-size:13px;font-weight:500;margin:14px 0 8px">' +
+            f'{n_domains} domain regions detected</div>',
+            unsafe_allow_html=True
+        )
 
-    # Column headers
-    hdr, sc, tc, pc = st.columns([1.1, 2.3, 2.3, 2.3])
-    hdr.markdown("")
-    sc.markdown('<b style="color:#3B82F6;font-size:12px">Sequence arm</b><br><span style="font-size:10px;color:#999">MMseqs2 vs SCOPe ASTRAL</span>', unsafe_allow_html=True)
-    tc.markdown('<b style="color:#0F6E56;font-size:12px">Structure arm</b><br><span style="font-size:10px;color:#999">ESMFold + Foldseek vs CATH50</span>', unsafe_allow_html=True)
-    pc.markdown('<b style="color:#7F77DD;font-size:12px">Profile arm</b><br><span style="font-size:10px;color:#999">HHblits + HHsearch vs PDB70</span>', unsafe_allow_html=True)
+    for dom in domains:
+        idx       = dom["domain_idx"]
+        qs        = dom["qstart"]
+        qe        = dom["qend"]
+        sub_seq   = dom["df_seq_sub"]
+        sub_str   = dom["df_str_sub"]
+        sub_hh    = dom["df_hh_sub"]
+        dom_fused = dom["fused"]
 
-    st.markdown('<div style="height:4px"></div>', unsafe_allow_html=True)
+        top         = dom_fused.iloc[0] if dom_fused is not None and not dom_fused.empty else None
+        votes       = int(top.get("votes",0)) if top is not None else 0
+        ev          = top.get("evidence","") if top is not None else ""
+        agreed_sccs = ((top.get("agreed_sccs","—") or "—").lstrip("~")) if top is not None else "—"
+        agreed_cath = top.get("agreed_cath","—") if top is not None else "—"
+        score       = float(top.get("ensemble_score",0)) if top is not None else 0.0
+        arms_cls    = top.get("arms_classes","") if top is not None else ""
+        top_pdb     = ""
+        if top is not None:
+            top_pdb = (pdb_from_scope(str(top.get("scope_domain",""))) or
+                       str(top.get("hh_hit",""))[:4].lower() or
+                       str(top.get("cath_domain",""))[:4].lower())
 
-    # SCOPe row
-    lc1, sc1, tc1, pc1 = st.columns([1.1, 2.3, 2.3, 2.3])
-    lc1.markdown('<div style="font-size:11px;color:#888;padding-top:6px">SCOPe class</div>', unsafe_allow_html=True)
-    with sc1:
-        if df_seq is not None and len(df_seq) > 0:
-            r = df_seq.iloc[0]
-            sccs = lk.get(str(r["target"]),{}).get("sccs","—")
-            cls  = lk.get(str(r["target"]),{}).get("cls","?")
-            col  = SCOP_COLORS.get(cls,"#888")
-            rng  = f"{int(r.get('qstart',0))}–{int(r.get('qend',0))} aa"
-            scope_url = f"https://scop.berkeley.edu/sunid={sccs}" if sccs != "—" else "#"
-            st.markdown(
-                f'<span style="color:{col};font-size:16px">●</span> '
-                f'<a href="{scope_url}" style="font-weight:600;font-size:13px">{sccs}</a><br>'
-                f'<span style="font-size:11px;color:#666">{SCOP_CLASSES.get(cls,cls)}</span><br>'
-                f'<span style="font-size:11px;color:#aaa">{rng} · e={fmt_e(r["evalue"])}</span>',
-                unsafe_allow_html=True
-            )
-        else:
-            st.caption("no sequence hits")
-    with tc1:
-        if df_str is not None and len(df_str) > 0:
-            r   = df_str.iloc[0]
-            cc  = get_cath_code(str(r["target"]))
-            cls = cath_code_to_scop_class(cc) if cc else "?"
-            col = SCOP_COLORS.get(cls,"#888")
-            rng = f"{int(r.get('qstart',0))}–{int(r.get('qend',0))} aa"
-            lc  = lddt_color(float(r.get("lddt",0)))
-            st.markdown(
-                f'<span style="color:{col};font-size:16px">●</span> '
-                f'<span style="font-weight:600;font-size:13px">class {cls}</span><br>'
-                f'<span style="font-size:11px;color:#666">{SCOP_CLASSES.get(cls,cls)}</span><br>'
-                f'<span style="font-size:10px;color:#BA7517">class level only — CATH→SCOPe crosswalk</span><br>'
-                f'<span style="font-size:11px;color:#aaa">{rng} · </span>'
-                f'<span style="font-size:11px;color:{lc}">lDDT={float(r.get("lddt",0)):.2f}</span>',
-                unsafe_allow_html=True
-            )
-        else:
-            st.caption("no structural hits")
-    with pc1:
-        if df_hh is not None and len(df_hh) > 0:
-            r            = df_hh.iloc[0]
-            sccs_r, cls  = _hh_sccs_resolved(r)
-            col          = SCOP_COLORS.get(cls,"#888")
-            rng          = f"{int(r.get('qstart',0))}–{int(r.get('qend',0))} aa"
-            source       = str(r.get("sccs_source",""))
-            if source == "cath_inferred":
-                note = '<br><span style="font-size:10px;color:#BA7517">~ class inferred from CATH (not in SCOPe ASTRAL)</span>'
-            elif source == "unknown":
-                note = '<br><span style="font-size:10px;color:#A32D2D">not in SCOPe or CATH — novel fold?</span>'
-            else:
-                note = ""
-            st.markdown(
-                f'<span style="color:{col};font-size:16px">●</span> '
-                f'<span style="font-weight:600;font-size:13px">{sccs_r}</span><br>'
-                f'<span style="font-size:11px;color:#666">{SCOP_CLASSES.get(cls,cls)}</span>'
-                f'{note}<br>'
-                f'<span style="font-size:11px;color:#aaa">{rng} · prob={float(r.get("prob",0)):.0f}%</span>',
-                unsafe_allow_html=True
-            )
-        else:
-            st.caption("deep search off or no hits")
-
-    st.markdown('<div style="height:8px"></div>', unsafe_allow_html=True)
-
-    # CATH row
-    lc2, sc2, tc2, pc2 = st.columns([1.1, 2.3, 2.3, 2.3])
-    lc2.markdown('<div style="font-size:11px;color:#888;padding-top:6px">CATH code</div>', unsafe_allow_html=True)
-    with sc2:
-        if df_seq is not None and len(df_seq) > 0:
-            r   = df_seq.iloc[0]
-            cc  = get_cath_code(str(r["target"]))
-            rng = f"{int(r.get('qstart',0))}–{int(r.get('qend',0))} aa"
-            url = f"https://www.cathdb.info/version/v4_3_0/superfamily/{cc}" if cc else "#"
-            c1  = cc.split(".")[0] if cc else "?"
-            st.markdown(
-                f'<a href="{url}" style="font-weight:600;font-size:13px">{cc or "—"}</a><br>'
-                f'<span style="font-size:11px;color:#666">{CATH_NAMES_FULL.get(c1,"—")}</span><br>'
-                f'<span style="font-size:11px;color:#aaa">{rng}</span>',
-                unsafe_allow_html=True
-            )
-        else:
-            st.caption("—")
-    with tc2:
-        if df_str is not None and len(df_str) > 0:
-            r   = df_str.iloc[0]
-            cc  = get_cath_code(str(r["target"]))
-            rng = f"{int(r.get('qstart',0))}–{int(r.get('qend',0))} aa"
-            url = f"https://www.cathdb.info/version/v4_3_0/superfamily/{cc}" if cc else "#"
-            c1  = cc.split(".")[0] if cc else "?"
-            st.markdown(
-                f'<a href="{url}" style="font-weight:600;font-size:13px">{cc or "—"}</a><br>'
-                f'<span style="font-size:11px;color:#666">{CATH_NAMES_FULL.get(c1,"—")}</span><br>'
-                f'<span style="font-size:11px;color:#aaa">{rng}</span>',
-                unsafe_allow_html=True
-            )
-        else:
-            st.caption("—")
-    with pc2:
-        if df_hh is not None and len(df_hh) > 0:
-            r   = df_hh.iloc[0]
-            cc  = str(r.get("cath_code","—"))
-            rng = f"{int(r.get('qstart',0))}–{int(r.get('qend',0))} aa"
-            url = f"https://www.cathdb.info/version/v4_3_0/superfamily/{cc}" if cc and cc not in ("—","?") else "#"
-            c1  = cc.split(".")[0] if cc and cc not in ("—","?") else "?"
-            st.markdown(
-                f'<a href="{url}" style="font-weight:600;font-size:13px">{cc}</a><br>'
-                f'<span style="font-size:11px;color:#666">{CATH_NAMES_FULL.get(c1,"—")}</span><br>'
-                f'<span style="font-size:11px;color:#aaa">{rng}</span>',
-                unsafe_allow_html=True
-            )
-        else:
-            st.caption("—")
-
-    st.markdown('<div style="height:8px"></div>', unsafe_allow_html=True)
-
-    # PDB row
-    lc3, sc3, tc3, pc3 = st.columns([1.1, 2.3, 2.3, 2.3])
-    lc3.markdown('<div style="font-size:11px;color:#888;padding-top:6px">PDB top hit</div>', unsafe_allow_html=True)
-    with sc3:
-        if df_seq is not None and len(df_seq) > 0:
-            r   = df_seq.iloc[0]
-            pdb = pdb_from_scope(str(r["target"]))
-            purl= str(r.get("PDB link", f"https://www.rcsb.org/structure/{pdb}"))
-            rng = f"{int(r.get('qstart',0))}–{int(r.get('qend',0))} aa"
-            desc= lk.get(str(r["target"]),{}).get("desc","")[:50]
-            st.markdown(
-                f'<a href="{purl}" style="font-weight:600;font-size:14px">{pdb.upper()}</a><br>'
-                f'<span style="font-size:11px;color:#666">{desc}</span><br>'
-                f'<span style="font-size:11px;color:#aaa">{rng} · {float(r.get("pident",0)):.0f}%id · e={fmt_e(r["evalue"])}</span>',
-                unsafe_allow_html=True
-            )
-        else:
-            st.caption("—")
-    with tc3:
-        if df_str is not None and len(df_str) > 0:
-            r    = df_str.iloc[0]
-            pdb  = str(r["target"])[:4].lower()
-            purl = str(r.get("PDB link", f"https://www.rcsb.org/structure/{pdb}"))
-            rng  = f"{int(r.get('qstart',0))}–{int(r.get('qend',0))} aa"
-            lddt = float(r.get("lddt",0))
-            lc   = lddt_color(lddt)
-            desc = str(r.get("target",""))
-            st.markdown(
-                f'<a href="{purl}" style="font-weight:600;font-size:14px">{pdb.upper()}</a><br>'
-                f'<span style="font-size:11px;color:#666">{desc}</span><br>'
-                f'<span style="font-size:11px;color:#aaa">{rng} · e={fmt_e(r["evalue"])} · </span>'
-                f'<span style="font-size:11px;color:{lc}">lDDT={lddt:.2f}</span>',
-                unsafe_allow_html=True
-            )
-        else:
-            st.caption("—")
-    with pc3:
-        if df_hh is not None and len(df_hh) > 0:
-            r    = df_hh.iloc[0]
-            pdb  = str(r.get("pdb",""))
-            purl = str(r.get("PDB link", f"https://www.rcsb.org/structure/{pdb}"))
-            rng  = f"{int(r.get('qstart',0))}–{int(r.get('qend',0))} aa"
-            name = str(r.get("hit_name", pdb.upper()))
-            st.markdown(
-                f'<a href="{purl}" style="font-weight:600;font-size:14px">{name}</a><br>'
-                f'<span style="font-size:11px;color:#666">PDB70 hit</span><br>'
-                f'<span style="font-size:11px;color:#aaa">{rng} · prob={float(r.get("prob",0)):.0f}% · e={fmt_e(r["evalue"])}</span>',
-                unsafe_allow_html=True
-            )
-        else:
-            st.caption("—")
-
-    st.markdown('<div style="height:4px"></div>', unsafe_allow_html=True)
-    st.caption("Each arm searches a different database — PDB IDs may differ but represent the same fold. Ensemble matches by query region overlap.")
-
-
-    # Ensemble verdict — prominent card with links
-    if not fused.empty:
-        st.markdown("---")
-        top  = fused.iloc[0]
-        ev   = top.get("evidence",""); votes = int(top.get("votes",0))
-        conf_color = {"all_three":"#1D9E75","two_arms":"#BA7517"}.get(ev,"#888780")
+        conf_color = {"all_three":"#1D9E75","two_arms":"#BA7517"}.get(ev,"#888")
         conf_label = {
-            "all_three":    "All three arms agree — highest confidence",
-            "two_arms":     "Two arms agree — high confidence",
-            "seq_only":     "Sequence arm only",
-            "struct_only":  "Structure arm only (dark proteome)",
-            "hhblits_only": "Profile arm only (twilight zone)",
-        }.get(ev, ev)
+            "all_three":"All 3 arms agree","two_arms":"2 arms agree",
+            "seq_only":"Sequence arm only","struct_only":"Structure arm only",
+            "hhblits_only":"Profile arm only (twilight zone)",
+        }.get(ev, ev or "—")
+        vote_bg  = {"all_three":"#D1FAE5","two_arms":"#FEF3C7"}.get(ev,"#F1EFE8")
+        vote_col = {"all_three":"#065F46","two_arms":"#92400E"}.get(ev,"#5F5E5A")
 
-        # Clean consensus values — strip ~ prefix for display
-        agreed_sccs_raw = top.get("agreed_sccs", top.get("sccs","—"))
-        agreed_sccs = agreed_sccs_raw.lstrip("~") if agreed_sccs_raw else "—"
-        agreed_cath = top.get("agreed_cath", top.get("cath_code","—"))
-        score       = float(top.get("ensemble_score",0))
-        arms_cls    = top.get("arms_classes","")
+        sccs_cls  = agreed_sccs[0] if agreed_sccs and agreed_sccs not in ("—","?") else "?"
+        sccs_name = SCOP_FULL.get(sccs_cls,"")
+        cath_c    = agreed_cath.split(".")[0] if agreed_cath and agreed_cath not in ("—","?") else "?"
+        cath_name = CATH_FULL.get(cath_c,"")
+        sccs_url  = f"https://scop.berkeley.edu/search/?key={agreed_sccs}" if agreed_sccs not in ("—","?") else "#"
+        cath_url  = f"https://www.cathdb.info/version/v4_3_0/superfamily/{agreed_cath}" if agreed_cath not in ("—","?","") else "#"
 
-        # Links
-        sccs_url = f"https://scop.berkeley.edu/search/?key={agreed_sccs}" if agreed_sccs not in ("—","?") else "#"
-        cath_url = f"https://www.cathdb.info/version/v4_3_0/superfamily/{agreed_cath}" if agreed_cath not in ("—","?","") else "#"
+        # Collect top PDB per arm (deduplicated)
+        pdb_hits: list[tuple] = []
+        if sub_seq is not None and len(sub_seq) > 0:
+            p = pdb_from_scope(str(sub_seq.iloc[0].get("target","")))
+            if p: pdb_hits.append((p, "seq"))
+        if sub_str is not None and len(sub_str) > 0:
+            p = str(sub_str.iloc[0].get("target",""))[:4].lower()
+            if p and p not in [x[0] for x in pdb_hits]: pdb_hits.append((p, "struct"))
+        if sub_hh is not None and len(sub_hh) > 0:
+            p = str(sub_hh.iloc[0].get("pdb",""))[:4].lower()
+            if p and p not in [x[0] for x in pdb_hits]: pdb_hits.append((p, "profile"))
 
-        # Top PDB hit for link
-        top_pdb_scope = pdb_from_scope(str(top.get("scope_domain","")))
-        top_pdb_hh    = str(top.get("hh_hit",""))[:4].lower()
-        top_pdb_str   = str(top.get("cath_domain",""))[:4].lower()
-        top_pdb       = top_pdb_scope or top_pdb_str or top_pdb_hh
-        pdb_url_top   = f"https://www.rcsb.org/structure/{top_pdb.upper()}" if top_pdb else "#"
+        pdb_btns = " ".join(
+            f'<a href="https://www.rcsb.org/structure/{p.upper()}" target="_blank" ' +
+            f'style="font-size:11px;padding:3px 10px;border-radius:6px;border:0.5px solid #ccc;' +
+            f'text-decoration:none;color:#185FA5;margin-right:4px">{p.upper()} ↗</a>'
+            for p, _ in pdb_hits[:3]
+        )
+        af_btn = ""
+        if top_pdb:
+            af_btn = (f'<a href="https://alphafold.ebi.ac.uk/search/text/{top_pdb.upper()}" target="_blank" ' +
+                      f'style="font-size:11px;padding:3px 10px;border-radius:6px;border:0.5px solid #ccc;' +
+                      f'text-decoration:none;color:#0F6E56;margin-right:4px">AlphaFold ↗</a>')
+
+        dom_label = f"Domain {idx} &nbsp;·&nbsp; aa {qs}–{qe}" if multi else f"aa {qs}–{qe}"
 
         st.markdown(
-            f'<div style="background:var(--color-background-secondary);border-left:5px solid {conf_color};'
-            f'border-radius:0 12px 12px 0;padding:16px 20px;margin-top:8px">'
-            f'<div style="font-weight:700;font-size:16px;color:{conf_color}">'
-            f'Ensemble: {votes}/3 votes &nbsp;·&nbsp; {conf_label}</div>'
-            f'<div style="display:flex;gap:32px;margin-top:10px;flex-wrap:wrap">'
-            f'<div><div style="font-size:10px;color:#aaa;text-transform:uppercase;letter-spacing:0.5px">SCOPe class</div>'
-            f'<a href="{sccs_url}" style="font-size:16px;font-weight:600;text-decoration:none">{agreed_sccs}</a><br>'
-            f'<span style="font-size:11px;color:#888">{SCOP_CLASSES.get(agreed_sccs[0] if agreed_sccs and agreed_sccs not in ("—","?") else "?","")}</span></div>'
-            f'<div><div style="font-size:10px;color:#aaa;text-transform:uppercase;letter-spacing:0.5px">CATH superfamily</div>'
-            f'<a href="{cath_url}" style="font-size:16px;font-weight:600;text-decoration:none">{agreed_cath}</a></div>'
-            f'<div><div style="font-size:10px;color:#aaa;text-transform:uppercase;letter-spacing:0.5px">Top PDB hit</div>'
-            f'<a href="{pdb_url_top}" style="font-size:16px;font-weight:600;text-decoration:none">{top_pdb.upper() if top_pdb else "—"}</a></div>'
-            f'<div><div style="font-size:10px;color:#aaa;text-transform:uppercase;letter-spacing:0.5px">Score</div>'
-            f'<span style="font-size:16px;font-weight:600">{score:.3f}</span></div>'
-            f'</div>'
-            f'<div style="font-size:11px;color:#aaa;margin-top:8px">'
-            f'Arm classes: {arms_cls} &nbsp;·&nbsp; '
-            f'Score = weighted e-value norm + class agreement bonus when ≥2 arms agree'
-            f'</div></div>',
+            f'<div style="border:0.5px solid #e0e0e0;border-left:4px solid {conf_color};' +
+            f'border-radius:0 12px 12px 0;padding:14px 18px;margin:8px 0">' +
+            f'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">' +
+            f'<span style="font-size:13px;font-weight:600">{dom_label}</span>' +
+            f'<span style="font-size:11px;padding:2px 10px;border-radius:10px;font-weight:500;' +
+            f'background:{vote_bg};color:{vote_col}">{votes}/3 &nbsp;·&nbsp; {conf_label}</span>' +
+            f'</div>' +
+            f'<div style="display:flex;gap:28px;flex-wrap:wrap;margin-bottom:10px">' +
+            f'<div><div style="font-size:10px;color:#aaa;letter-spacing:0.4px;text-transform:uppercase">SCOPe</div>' +
+            f'<a href="{sccs_url}" style="font-size:15px;font-weight:600;text-decoration:none;color:#185FA5">{agreed_sccs}</a>' +
+            f'<div style="font-size:11px;color:#888">{sccs_name}</div></div>' +
+            f'<div><div style="font-size:10px;color:#aaa;letter-spacing:0.4px;text-transform:uppercase">CATH</div>' +
+            f'<a href="{cath_url}" style="font-size:15px;font-weight:600;text-decoration:none;color:#185FA5">{agreed_cath}</a>' +
+            f'<div style="font-size:11px;color:#888">{cath_name}</div></div>' +
+            f'<div><div style="font-size:10px;color:#aaa;letter-spacing:0.4px;text-transform:uppercase">Score</div>' +
+            f'<span style="font-size:15px;font-weight:600">{score:.3f}</span></div>' +
+            f'</div>' +
+            f'<div style="margin-bottom:6px">{pdb_btns}{af_btn}</div>' +
+            f'<div style="font-size:10px;color:#bbb">Arm classes: {arms_cls}</div>' +
+            f'</div>',
             unsafe_allow_html=True
         )
 
-    # Functional annotation — fixed AlphaFold URL (needs UniProt ID not PDB ID)
-    top_pdb = ""
-    if not fused.empty:
-        top_pdb = pdb_from_scope(str(fused.iloc[0].get("scope_domain","")))
-        if not top_pdb: top_pdb = str(fused.iloc[0].get("hh_hit",""))[:4].lower()
-        if not top_pdb: top_pdb = str(fused.iloc[0].get("cath_domain",""))[:4].lower()
-    if top_pdb and len(top_pdb) == 4:
-        st.markdown(
-            f'<div style="font-size:11px;color:#888;margin:10px 0 2px">'
-            f'Functional annotation for top ensemble hit ({top_pdb.upper()})</div>',
-            unsafe_allow_html=True
-        )
-        with st.expander(f"Load UniProt · Pfam · AlphaFold structure — {top_pdb.upper()}", expanded=False):
-            with st.spinner(f"Fetching {top_pdb.upper()}…"):
-                info = fetch_pdb_function(top_pdb)
-            if info.get("uniprot_id"):
-                uid = info["uniprot_id"]
-                st.markdown(
-                    f'**UniProt:** [{uid}](https://www.uniprot.org/uniprot/{uid}) &nbsp;·&nbsp; '
-                    f'**Gene:** {info.get("gene","—")} &nbsp;·&nbsp; '
-                    f'**Organism:** {info.get("organism","—")}'
-                )
-                if info.get("function"):
-                    st.markdown(f'_{info["function"][:400]}_')
-                if info.get("pfam"):
-                    st.markdown("**Pfam:** " + " · ".join(f'`{p["pfam_id"]}` {p["name"]}' for p in info["pfam"][:4]))
-                # AlphaFold uses UniProt accession — this is the correct URL
-                st.markdown(
-                    f'**AlphaFold structure** ([{uid}](https://alphafold.ebi.ac.uk/entry/{uid})):'
-                )
-                st.markdown(
-                    f'<iframe src="https://alphafold.ebi.ac.uk/entry/{uid}" '
-                    f'width="100%" height="520" style="border:none;border-radius:8px;margin-top:4px" '
-                    f'title="AlphaFold structure for {uid}"></iframe>',
-                    unsafe_allow_html=True
-                )
-                st.markdown(
-                    f'[View {top_pdb.upper()} on RCSB PDB](https://www.rcsb.org/structure/{top_pdb.upper()})'
-                )
-            else:
-                st.caption(f"No UniProt mapping found for {top_pdb.upper()}.")
-                st.markdown(f"[View {top_pdb.upper()} on RCSB PDB](https://www.rcsb.org/structure/{top_pdb.upper()})")
+        # Functional annotation — loads only on expander click
+        if top_pdb and len(top_pdb) == 4:
+            lbl = f"Load function · UniProt · Pfam — {top_pdb.upper()}" + (f" (Domain {idx})" if multi else "")
+            with st.expander(lbl, expanded=False):
+                with st.spinner(f"Fetching {top_pdb.upper()}…"):
+                    info = fetch_pdb_function(top_pdb)
+                if info.get("uniprot_id"):
+                    uid = info["uniprot_id"]
+                    st.markdown(
+                        f'**UniProt:** [{uid}](https://www.uniprot.org/uniprot/{uid}) &nbsp;·&nbsp; ' +
+                        f'**Gene:** {info.get("gene","—")} &nbsp;·&nbsp; **Organism:** {info.get("organism","—")}'
+                    )
+                    if info.get("function"):
+                        st.markdown(f'_{info["function"][:400]}_')
+                    if info.get("pfam"):
+                        st.markdown("**Pfam:** " + " · ".join(
+                            f'`{p["pfam_id"]}` {p["name"]}' for p in info["pfam"][:4]))
+                    st.markdown(
+                        f'[AlphaFold structure — {uid}](https://alphafold.ebi.ac.uk/entry/{uid}) &nbsp;·&nbsp; ' +
+                        f'[{top_pdb.upper()} on RCSB](https://www.rcsb.org/structure/{top_pdb.upper()})'
+                    )
+                else:
+                    st.caption(f"No UniProt mapping for {top_pdb.upper()}.")
+                    st.markdown(f'[{top_pdb.upper()} on RCSB](https://www.rcsb.org/structure/{top_pdb.upper()})')
+
+        if multi and idx < n_domains:
+            st.markdown('<hr style="border:none;border-top:0.5px solid #eee;margin:12px 0"/>', unsafe_allow_html=True)
+
+    if not multi:
+        st.caption("Each arm searches a different database — PDB IDs may differ but represent the same fold.")
 
 
 
