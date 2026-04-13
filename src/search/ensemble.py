@@ -49,6 +49,129 @@ def _overlap_fraction(s1: int, e1: int, s2: int, e2: int) -> float:
         return 0.0
 
 
+def cluster_hits_by_region(
+    df: pd.DataFrame,
+    min_overlap: float = 0.6,
+    qstart_col: str = "qstart",
+    qend_col:   str = "qend",
+) -> list[tuple[int, int, pd.DataFrame]]:
+    """
+    Cluster hits by overlapping query region.
+
+    Returns list of (cluster_start, cluster_end, sub_dataframe) tuples,
+    sorted by cluster_start.  Hits that overlap ≥ min_overlap with an
+    existing cluster are merged into it; otherwise they start a new cluster.
+
+    Used to split multi-domain results into per-domain sub-results before
+    running per-domain ensemble voting.
+    """
+    if df is None or len(df) == 0:
+        return []
+
+    clusters: list[dict] = []   # {"qs": int, "qe": int, "indices": list[int]}
+
+    for idx, row in df.iterrows():
+        qs = int(row.get(qstart_col, 0))
+        qe = int(row.get(qend_col,   0))
+        placed = False
+        for cl in clusters:
+            if _overlap_fraction(qs, qe, cl["qs"], cl["qe"]) >= min_overlap:
+                cl["qs"] = min(cl["qs"], qs)
+                cl["qe"] = max(cl["qe"], qe)
+                cl["indices"].append(idx)
+                placed = True
+                break
+        if not placed:
+            clusters.append({"qs": qs, "qe": qe, "indices": [idx]})
+
+    result = []
+    for cl in sorted(clusters, key=lambda x: x["qs"]):
+        sub = df.loc[cl["indices"]].reset_index(drop=True)
+        result.append((cl["qs"], cl["qe"], sub))
+    return result
+
+
+def get_domain_clusters(
+    df_seq: pd.DataFrame | None,
+    df_str: pd.DataFrame | None,
+    df_hh:  pd.DataFrame | None,
+    min_overlap: float = 0.6,
+) -> list[dict]:
+    """
+    Identify distinct domain regions across all three arms and return
+    one dict per domain with the arm sub-dataframes and ensemble result.
+
+    Each returned dict has:
+        domain_idx   int          1-based domain number
+        qstart       int          cluster start in query sequence
+        qend         int          cluster end in query sequence
+        df_seq_sub   DataFrame    seq hits covering this region
+        df_str_sub   DataFrame    struct hits covering this region
+        df_hh_sub    DataFrame    HHblits hits covering this region
+        fused        DataFrame    ensemble result for this region only
+    """
+    # Collect all hits across arms to find all domain regions
+    all_regions: list[tuple[int, int]] = []
+
+    def _add_regions(df, qs_col="qstart", qe_col="qend"):
+        if df is None or len(df) == 0:
+            return
+        for _, r in df.iterrows():
+            all_regions.append((int(r.get(qs_col, 0)), int(r.get(qe_col, 0))))
+
+    _add_regions(df_seq)
+    _add_regions(df_str)
+    _add_regions(df_hh)
+
+    if not all_regions:
+        return []
+
+    # Cluster all regions together to find domain boundaries
+    domain_clusters: list[dict] = []
+    for qs, qe in sorted(all_regions, key=lambda x: x[0]):
+        placed = False
+        for dc in domain_clusters:
+            if _overlap_fraction(qs, qe, dc["qs"], dc["qe"]) >= min_overlap:
+                dc["qs"] = min(dc["qs"], qs)
+                dc["qe"] = max(dc["qe"], qe)
+                placed = True
+                break
+        if not placed:
+            domain_clusters.append({"qs": qs, "qe": qe})
+
+    domain_clusters.sort(key=lambda x: x["qs"])
+
+    def _subset(df, qs, qe):
+        if df is None or len(df) == 0:
+            return pd.DataFrame()
+        mask = df.apply(
+            lambda r: _overlap_fraction(
+                int(r.get("qstart", 0)), int(r.get("qend", 0)), qs, qe
+            ) >= min_overlap,
+            axis=1
+        )
+        return df[mask].reset_index(drop=True)
+
+    results = []
+    for i, dc in enumerate(domain_clusters):
+        qs, qe = dc["qs"], dc["qe"]
+        sub_seq = _subset(df_seq, qs, qe)
+        sub_str = _subset(df_str, qs, qe)
+        sub_hh  = _subset(df_hh,  qs, qe)
+        fused   = fuse_results_three(sub_seq, sub_str, sub_hh)
+        results.append({
+            "domain_idx": i + 1,
+            "qstart":     qs,
+            "qend":       qe,
+            "df_seq_sub": sub_seq,
+            "df_str_sub": sub_str,
+            "df_hh_sub":  sub_hh,
+            "fused":      fused,
+        })
+
+    return results
+
+
 def _evalue_to_score(evalue: float) -> float:
     try:
         return max(0.0, min(1.0, -math.log10(float(evalue)) / 30.0))
