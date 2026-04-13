@@ -154,9 +154,9 @@ def run_hhblits(
     # Within each quality tier, keep original rank order (by prob/evalue)
     source_rank = {"direct": 0, "hhsearch_scop": 1, "cath_inferred": 2, "unknown": 3}
     df["_src_rank"] = df["sccs_source"].map(lambda x: source_rank.get(x, 3))
-    df = df.sort_values(["_src_rank", df.index.to_series().rename("orig")],
-                        ascending=[True, True]).drop(columns=["_src_rank"])
-    df = df.reset_index(drop=True)
+    df["_orig_rank"] = range(len(df))
+    df = df.sort_values(["_src_rank", "_orig_rank"], ascending=[True, True])
+    df = df.drop(columns=["_src_rank", "_orig_rank"]).reset_index(drop=True)
 
     return df, None
 
