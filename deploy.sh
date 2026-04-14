@@ -21,7 +21,7 @@ case "$1" in
     echo "Rebuilding prod image..."
     docker compose -f docker-compose.yml build --no-cache
     echo "Restarting prod container (port 8501)..."
-    docker compose -f docker-compose.yml up -d
+    docker compose -f docker-compose.yml down && docker compose -f docker-compose.yml up -d
     echo "✓ Production live at https://andom2.bioinfo-wuerz.eu"
     docker compose -f docker-compose.yml logs --tail=5
     ;;
