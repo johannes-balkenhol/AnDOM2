@@ -204,113 +204,159 @@ def _seg(df, seq_len, arm, mode, row_start=0, row_end=None):
 
 
 def render_three_domain_maps(df_seq, df_str, df_hh, seq_len):
-    """
-    Domain architecture bar using st.components.v1.html so JS hover works.
-    Shows top 3 hits per arm, deduplicated by region (top-1 per cluster).
-    Color = SCOPe class. Opacity = confidence (e-value / lDDT / prob).
-    """
     import streamlit.components.v1 as components
-    from search.ensemble import cluster_hits_by_region
-    lk = lookup.all_domains()
+    import math
     from db.lookup import get_cath_code, cath_code_to_scop_class
+    lk = lookup.all_domains()
+    MAX_HITS = 5
 
-    MAX_PER_ARM = 3
+    def _pdb(d):
+        try: return d[1:5].lower()
+        except: return ''
 
-    def _dedup_top(df, arm):
-        """Return top-1 hit per region cluster — max MAX_PER_ARM rows."""
-        if df is None or len(df) == 0:
-            return []
-        clusters = cluster_hits_by_region(df, min_overlap=0.6)
-        result = []
-        for _, _, sub in clusters[:MAX_PER_ARM]:
-            result.append(sub.iloc[0])
-        return result
+    def _seg(qs, qe, color, opacity, label, tip):
+        l = (qs / seq_len) * 100
+        w = max(((qe - qs) / seq_len) * 100, 1.2)
+        ts = tip.replace('"', '&quot;').replace("'", '&#39;')
+        lbl = ''
+        if w > 6:
+            lbl = ('<span style="font-size:9px;color:rgba(255,255,255,0.92);white-space:nowrap;'
+                   'overflow:hidden;text-overflow:ellipsis;padding:0 3px;line-height:14px">'
+                   + label + '</span>')
+        sty = ('position:absolute;top:1px;left:%.2f%%;width:%.2f%%;height:13px;'
+               'background:%s;opacity:%.2f;border-radius:2px;overflow:hidden;cursor:default'
+               ) % (l, w, color, opacity)
+        return ('<div onmouseover="T(\'' + ts + '\')" onmouseout="T()"'
+                ' style="' + sty + '">' + lbl + '</div>')
 
-    def _seg(row, arm):
-        qs = int(row.get("qstart",0)); qe = int(row.get("qend",0))
-        l  = (qs / seq_len) * 100
-        w  = max(((qe - qs) / seq_len) * 100, 0.8)
-        if arm == "seq":
-            cls  = lk.get(str(row.get("target","")),{}).get("cls","?")
-            sccs = lk.get(str(row.get("target","")),{}).get("sccs","?")
-            desc = lk.get(str(row.get("target","")),{}).get("desc","")[:55]
-            c    = SCOP_COLORS.get(cls,"#888"); o = 0.85
-            tip  = f"SCOPe: {sccs} | E: {fmt_e(row.get('evalue',1))} | {qs}-{qe} aa | {desc}"
-        elif arm == "str":
-            cc   = get_cath_code(str(row.get("target","")))
-            cls  = cath_code_to_scop_class(cc) if cc else "?"
-            lddt = float(row.get("lddt",0.7))
-            c    = SCOP_COLORS.get(cls,"#888"); o = 0.5+0.5*lddt
-            tip  = f"CATH: {cc} | class {cls} | lDDT: {lddt:.2f} | {qs}-{qe} aa"
-        else:
-            sccs = str(row.get("sccs","?"))
-            cls  = sccs[0] if sccs not in ("—","?","") and not sccs.startswith("~") else "?"
-            if cls == "?":
-                cc2 = str(row.get("cath_code",""))
-                if cc2 and cc2 not in ("—","?"):
-                    cls = {"1":"a","2":"b","3":"c","4":"g"}.get(cc2.split(".")[0],"?")
-            prob = float(row.get("prob",50))/100; c = SCOP_COLORS.get(cls,"#888"); o = 0.35+0.65*prob
-            name = str(row.get("hit_name",row.get("pdb","")))
-            tip  = f"HHblits: {name} | SCOPe: {sccs} | prob: {prob*100:.0f}% | {qs}-{qe} aa"
-        tip_safe = tip.replace("'","&#39;").replace('"',"&quot;")
-        return f'<div onmouseenter="T(\'{tip_safe}\')" onmouseleave="T(\'\')" style="position:absolute;top:1px;left:{l:.2f}%;width:{w:.2f}%;height:12px;background:{c};opacity:{o:.2f};border-radius:2px;cursor:default"></div>'
+    def _track(inner, ok):
+        bg = '#f0f3f8' if ok else '#f8f9fa'
+        return ('<div style="position:relative;height:15px;background:' + bg +
+                ';border-radius:2px;flex:1;border:0.5px solid #e0e3ea">' + inner + '</div>')
 
-    def _arm_html(rows, arm, label, color):
-        n_total = len(rows)
-        inner = "".join(_seg(r, arm) for r in rows) if rows else '<span style="font-size:10px;color:#bbb;padding-left:4px">no hits</span>'
-        return (
-            f'<div style="display:flex;align-items:flex-start;margin-bottom:5px">'
-            f'<div style="width:78px;flex-shrink:0;padding-top:1px">'
-            f'<span style="font-size:11px;font-weight:500;color:{color}">{label}</span>'
-            f'<span style="font-size:9px;color:#bbb;margin-left:4px">top {min(n_total,MAX_PER_ARM)}</span>'
-            f'</div>'
-            f'<div style="flex:1">'
-            + "".join(
-                f'<div style="position:relative;height:14px;background:#f1f3f8;border-radius:2px;margin-bottom:2px;border:0.5px solid #e4e6ea">'
-                f'{_seg(rows[i], arm)}</div>'
-                for i in range(len(rows))
-            )
-            + (f'<div style="font-size:10px;color:#bbb;padding:2px 0">no hits</div>' if not rows else "")
-            + f'</div></div>'
-        )
+    def _row(lbl, sub, col, inner, ok):
+        return ('<div style="display:flex;align-items:center;margin-bottom:2px">'
+                '<span style="width:70px;flex-shrink:0;font-size:10px;font-weight:500;color:'
+                + col + ';line-height:1.1">' + lbl +
+                '<br><span style="font-size:8px;font-weight:400;color:#bbb">' + sub + '</span>'
+                '</span>' + _track(inner, ok) + '</div>')
 
-    # Dedup per arm
-    seq_rows = _dedup_top(df_seq, "seq")
-    str_rows = _dedup_top(df_str, "str")
-    hh_rows  = _dedup_top(df_hh,  "hh")
+    def _ghdr(lbl, col, note=''):
+        n = ('<span style="margin-left:auto;font-size:9px;color:#ccc;font-style:italic">'
+             + note + '</span>') if note else ''
+        return ('<div style="display:flex;align-items:center;padding-left:70px;'
+                'border-bottom:0.5px solid #e8eaf0;padding-bottom:2px;margin-bottom:3px">'
+                '<span style="font-size:10px;font-weight:500;color:' + col + '">' + lbl + '</span>'
+                + n + '</div>')
 
-    # Ruler ticks
-    ticks = "".join(
-        f'<span style="position:absolute;left:{p}%;font-size:9px;color:#ccc;transform:translateX(-50%)">{int(p*seq_len/100)}</span>'
+    def _seq(df):
+        if df is None or len(df) == 0: return '', '', '', False
+        sc = ca = pb = ''
+        for _, r in df.head(MAX_HITS).iterrows():
+            qs = int(r.get('qstart', 0)); qe = int(r.get('qend', 0))
+            tgt = str(r['target'])
+            cls  = lk.get(tgt, {}).get('cls', '?')
+            sccs = lk.get(tgt, {}).get('sccs', '?')
+            desc = lk.get(tgt, {}).get('desc', '')[:40]
+            ev   = float(r['evalue'])
+            cc   = get_cath_code(tgt) or '?'
+            pdb  = _pdb(tgt)
+            col  = SCOP_COLORS.get(cls, '#888')
+            op   = max(0.3, min(0.95, -math.log10(max(ev, 1e-300)) / 30))
+            sc += _seg(qs, qe, col, op, sccs,
+                       'SCOPe: %s | e=%.1e | %d-%d aa | %s' % (sccs, ev, qs, qe, desc))
+            ca += _seg(qs, qe, col, op * 0.85, cc,
+                       'CATH: %s | %s | %d-%d aa' % (cc, tgt, qs, qe))
+            pb += _seg(qs, qe, '#3B82F6', op, pdb.upper(),
+                       'PDB: %s | e=%.1e | %d-%d aa' % (pdb.upper(), ev, qs, qe))
+        return sc, ca, pb, True
+
+    def _str(df):
+        if df is None or len(df) == 0: return '', '', '', False
+        sc = ca = pb = ''
+        for _, r in df.head(MAX_HITS).iterrows():
+            qs = int(r.get('qstart', 0)); qe = int(r.get('qend', 0))
+            tgt  = str(r['target'])
+            cc   = get_cath_code(tgt) or '?'
+            cls  = cath_code_to_scop_class(cc) if cc and cc != '?' else '?'
+            lddt = float(r.get('lddt', 0.7))
+            pdb  = tgt[:4].lower()
+            col  = SCOP_COLORS.get(cls, '#888')
+            op   = 0.45 + 0.55 * lddt
+            sc += _seg(qs, qe, col, op, 'cls:' + cls,
+                       'CATH->SCOPe: class %s | lDDT=%.2f | %d-%d aa' % (cls, lddt, qs, qe))
+            ca += _seg(qs, qe, '#0F6E56', op, cc,
+                       'CATH: %s | lDDT=%.2f | %d-%d aa' % (cc, lddt, qs, qe))
+            pb += _seg(qs, qe, '#0F6E56', op * 0.9, pdb.upper(),
+                       'PDB: %s | lDDT=%.2f | %d-%d aa' % (pdb.upper(), lddt, qs, qe))
+        return sc, ca, pb, True
+
+    def _hh(df):
+        if df is None or len(df) == 0: return '', '', '', False
+        sc = ca = pb = ''
+        for _, r in df.head(MAX_HITS).iterrows():
+            qs   = int(r.get('qstart', 0)); qe = int(r.get('qend', 0))
+            sccs = str(r.get('sccs', '?'))
+            cls  = sccs[0] if sccs not in ('--','?','') and not sccs.startswith('~') else '?'
+            prob = float(r.get('prob', 50)) / 100
+            pdb  = str(r.get('pdb', ''))[:4].lower()
+            name = str(r.get('hit_name', pdb))
+            cc   = str(r.get('cath_code', '?')) or '?'
+            col  = SCOP_COLORS.get(cls, '#888')
+            op   = 0.3 + 0.7 * prob
+            sc += _seg(qs, qe, col, op, sccs,
+                       'HHblits: %s | SCOPe: %s | prob=%.0f%% | %d-%d aa' % (name, sccs, prob*100, qs, qe))
+            ca += _seg(qs, qe, '#7F77DD', op * 0.85, cc,
+                       'CATH: %s | %s | %d-%d aa' % (cc, name, qs, qe))
+            pb += _seg(qs, qe, '#7F77DD', op, pdb.upper(),
+                       'PDB: %s | prob=%.0f%% | %d-%d aa' % (pdb.upper(), prob*100, qs, qe))
+        return sc, ca, pb, True
+
+    sq_sc, sq_ca, sq_pb, sq_ok = _seq(df_seq)
+    st_sc, st_ca, st_pb, st_ok = _str(df_str)
+    hh_sc, hh_ca, hh_pb, hh_ok = _hh(df_hh)
+    no_h = '<span style="font-size:10px;color:#ccc;padding-left:4px">no hits</span>'
+
+    ticks = ''.join(
+        '<span style="position:absolute;left:%.0f%%;font-size:9px;color:#ccc;'
+        'transform:translateX(-50%%)">%d</span>' % (p, int(p * seq_len / 100))
         for p in [0, 25, 50, 75, 100]
     )
-    legend = " &nbsp;".join(
-        f'<span style="color:{SCOP_COLORS.get(k,"#888")}">&#9632;</span>{k}' for k in SCOP_CLASSES
+    legend = ' &nbsp;'.join(
+        '<span style="color:' + SCOP_COLORS.get(k,'#888') + '">&#9632;</span>'
+        '<span style="font-size:9px">' + k + '</span>'
+        for k in SCOP_CLASSES
     )
-
-    html = f"""<!DOCTYPE html><html><head><meta charset="utf-8">
-<style>body{{margin:0;padding:4px 0;font-family:-apple-system,sans-serif;background:transparent}}</style>
-</head><body>
-<div id="tip" style="height:18px;font-size:11px;font-family:monospace;color:#555;margin-bottom:6px;
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></div>
-<div style="font-size:10px;color:#aaa;margin-bottom:6px">
-  Mouse over bars for annotation details &nbsp;·&nbsp; Total length: {seq_len} aa
-</div>
-<div style="position:relative;height:14px;margin-bottom:6px">
-  <div style="position:absolute;top:7px;left:0;right:0;height:0.5px;background:#d8dce4"></div>
-  {ticks}
-</div>
-{_arm_html(seq_rows, "seq", "Seq arm",     "#3B82F6")}
-{_arm_html(str_rows, "str", "Struct arm",  "#0F6E56")}
-{_arm_html(hh_rows,  "hh",  "Profile arm", "#7F77DD")}
-<div style="font-size:10px;color:#bbb;margin-top:4px">{legend}</div>
-<script>function T(s){{document.getElementById('tip').textContent=s||'';}}</script>
-</body></html>"""
-
-    n_rows = len(seq_rows) + len(str_rows) + len(hh_rows)
-    height = 80 + n_rows * 18
-    components.html(html, height=height, scrolling=False)
-
+    parts = [
+        '<!DOCTYPE html><html><head><meta charset="utf-8">',
+        '<style>body{margin:0;padding:4px 0 2px;font-family:-apple-system,sans-serif;background:transparent}.ag{margin-bottom:8px}</style>',
+        '</head><body>',
+        '<div id="tip" style="height:16px;font-size:10px;font-family:monospace;color:#666;',
+        'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:6px"></div>',
+        '<div style="position:relative;height:12px;margin-bottom:6px">',
+        '<div style="position:absolute;top:6px;left:0;right:0;height:0.5px;background:#dde"></div>',
+        ticks, '</div>',
+        '<div class="ag">',
+        _ghdr('Seq arm - MMseqs2 / SCOPe', '#3B82F6', '' if sq_ok else 'no hits'),
+        _row('SCOPe', 'class+sccs', '#3B82F6', sq_sc if sq_ok else no_h, sq_ok),
+        _row('CATH',  'via lookup', '#3B82F6', sq_ca if sq_ok else no_h, sq_ok),
+        _row('PDB',   'top hits',   '#3B82F6', sq_pb if sq_ok else no_h, sq_ok),
+        '</div><div class="ag">',
+        _ghdr('Struct arm - ESMFold / CATH50', '#0F6E56', '' if st_ok else 'no hits'),
+        _row('SCOPe', 'crosswalk',  '#0F6E56', st_sc if st_ok else no_h, st_ok),
+        _row('CATH',  'direct',     '#0F6E56', st_ca if st_ok else no_h, st_ok),
+        _row('PDB',   'top hits',   '#0F6E56', st_pb if st_ok else no_h, st_ok),
+        '</div><div class="ag">',
+        _ghdr('Profile arm - HHblits / PDB70', '#7F77DD', '' if hh_ok else 'disabled / no hits'),
+        _row('SCOPe', 'direct sccs', '#7F77DD', hh_sc if hh_ok else no_h, hh_ok),
+        _row('CATH',  'via PDB hit', '#7F77DD', hh_ca if hh_ok else no_h, hh_ok),
+        _row('PDB',   'top hits',    '#7F77DD', hh_pb if hh_ok else no_h, hh_ok),
+        '</div>',
+        '<div style="font-size:9px;color:#ccc;margin-top:2px">' + legend + ' &nbsp;·&nbsp; opacity = confidence</div>',
+        '<script>function T(s){document.getElementById("tip").textContent=s||"";}',
+        '</script></body></html>',
+    ]
+    components.html(''.join(parts), height=260, scrolling=False)
 
 
 def render_compact_summary(df_seq, df_str, df_hh, fused, seq_len):
@@ -700,10 +746,22 @@ with page[0]:
             # ── EXPERT MODE ───────────────────────────────────────────────────
             with st.expander("Expert mode — detailed three-arm results", expanded=False):
                 st.caption("Each arm independently: SCOPe class · CATH code · top 7 PDB hits · functional lookup")
-                arm_col1, arm_col2, arm_col3 = st.columns(3)
-                with arm_col1: render_arm_panel("Sequence arm — MMseqs2 / SCOPe", "#3B82F6", df_seq, "seq")
-                with arm_col2: render_arm_panel("Structure arm — ESMFold / CATH50", "#0F6E56", df_str, "str")
-                with arm_col3: render_arm_panel("Profile arm — HHblits / PDB70", "#7F77DD", df_hh, "hh")
+                from search.ensemble import get_domain_clusters as _gdc
+                _domains_exp = _gdc(df_seq, df_str, df_hh, min_overlap=0.6)
+                if len(_domains_exp) > 1:
+                    _exp_tab_labels = [f"Domain {d['domain_idx']} · aa {d['qstart']}–{d['qend']}" for d in _domains_exp]
+                    _exp_tabs = st.tabs(_exp_tab_labels)
+                    for _dom, _tab in zip(_domains_exp, _exp_tabs):
+                        with _tab:
+                            _c1, _c2, _c3 = st.columns(3)
+                            with _c1: render_arm_panel("Sequence arm — MMseqs2 / SCOPe", "#3B82F6", _dom["df_seq_sub"], "seq")
+                            with _c2: render_arm_panel("Structure arm — ESMFold / CATH50", "#0F6E56", _dom["df_str_sub"], "str")
+                            with _c3: render_arm_panel("Profile arm — HHblits / PDB70", "#7F77DD", _dom["df_hh_sub"], "hh")
+                else:
+                    arm_col1, arm_col2, arm_col3 = st.columns(3)
+                    with arm_col1: render_arm_panel("Sequence arm — MMseqs2 / SCOPe", "#3B82F6", df_seq, "seq")
+                    with arm_col2: render_arm_panel("Structure arm — ESMFold / CATH50", "#0F6E56", df_str, "str")
+                    with arm_col3: render_arm_panel("Profile arm — HHblits / PDB70", "#7F77DD", df_hh, "hh")
 
             # ── ENSEMBLE TABLE ────────────────────────────────────────────────
             if not fused.empty:

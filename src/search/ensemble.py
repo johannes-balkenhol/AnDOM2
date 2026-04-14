@@ -92,54 +92,79 @@ def cluster_hits_by_region(
 
 
 def get_domain_clusters(
-    df_seq: pd.DataFrame | None,
-    df_str: pd.DataFrame | None,
-    df_hh:  pd.DataFrame | None,
+    df_seq: "pd.DataFrame | None",
+    df_str: "pd.DataFrame | None",
+    df_hh:  "pd.DataFrame | None",
     min_overlap: float = 0.6,
-) -> list[dict]:
+) -> list:
     """
     Identify distinct domain regions across all three arms and return
     one dict per domain with the arm sub-dataframes and ensemble result.
 
-    Each returned dict has:
-        domain_idx   int          1-based domain number
-        qstart       int          cluster start in query sequence
-        qend         int          cluster end in query sequence
-        df_seq_sub   DataFrame    seq hits covering this region
-        df_str_sub   DataFrame    struct hits covering this region
-        df_hh_sub    DataFrame    HHblits hits covering this region
-        fused        DataFrame    ensemble result for this region only
+    Strategy (v2 fix): cluster each arm independently first. Use seq arm
+    hits as primary domain boundaries (most specific, shortest hits).
+    Struct/HH only add NEW domain regions not already covered — they never
+    merge two seq domains into one. This fixes the SH2+SH3 merging bug
+    where a full-protein struct hit collapsed two seq domains.
     """
-    # Collect all hits across arms to find all domain regions
-    all_regions: list[tuple[int, int]] = []
 
-    def _add_regions(df, qs_col="qstart", qe_col="qend"):
+    # Primary (seq) arm uses a lower overlap threshold so weak/short hits
+    # still define a domain boundary.  Struct/HH use the full threshold.
+    _PRIMARY_OVERLAP = 0.4
+
+    def _cluster_arm(df, threshold, qs_col="qstart", qe_col="qend"):
         if df is None or len(df) == 0:
-            return
+            return []
+        clusters = []
         for _, r in df.iterrows():
-            all_regions.append((int(r.get(qs_col, 0)), int(r.get(qe_col, 0))))
+            qs = int(r.get(qs_col, 0))
+            qe = int(r.get(qe_col, 0))
+            placed = False
+            for cl in clusters:
+                if _overlap_fraction(qs, qe, cl["qs"], cl["qe"]) >= threshold:
+                    cl["qs"] = min(cl["qs"], qs)
+                    cl["qe"] = max(cl["qe"], qe)
+                    placed = True
+                    break
+            if not placed:
+                clusters.append({"qs": qs, "qe": qe})
+        return [(c["qs"], c["qe"]) for c in clusters]
 
-    _add_regions(df_seq)
-    _add_regions(df_str)
-    _add_regions(df_hh)
+    seq_regions = _cluster_arm(df_seq, _PRIMARY_OVERLAP)
+    str_regions = _cluster_arm(df_str, min_overlap)
+    hh_regions  = _cluster_arm(df_hh,  min_overlap)
 
-    if not all_regions:
+    # Seq arm is primary (most specific hits). Fall back if empty.
+    primary = seq_regions if seq_regions else (str_regions if str_regions else hh_regions)
+    if not primary:
         return []
 
-    # Cluster all regions together to find domain boundaries
-    domain_clusters: list[dict] = []
-    for qs, qe in sorted(all_regions, key=lambda x: x[0]):
+    # Seed domain list from primary
+    domain_clusters = [{"qs": qs, "qe": qe} for qs, qe in primary]
+
+    # Struct/HH only ADD new domains, never merge existing ones
+    for qs, qe in str_regions + hh_regions:
+        overlaps_any = any(
+            _overlap_fraction(qs, qe, dc["qs"], dc["qe"]) >= min_overlap
+            for dc in domain_clusters
+        )
+        if not overlaps_any:
+            domain_clusters.append({"qs": qs, "qe": qe})
+
+    # Final merge pass
+    merged = []
+    for dc in sorted(domain_clusters, key=lambda x: x["qs"]):
         placed = False
-        for dc in domain_clusters:
-            if _overlap_fraction(qs, qe, dc["qs"], dc["qe"]) >= min_overlap:
-                dc["qs"] = min(dc["qs"], qs)
-                dc["qe"] = max(dc["qe"], qe)
+        for m in merged:
+            if _overlap_fraction(dc["qs"], dc["qe"], m["qs"], m["qe"]) >= min_overlap:
+                m["qs"] = min(m["qs"], dc["qs"])
+                m["qe"] = max(m["qe"], dc["qe"])
                 placed = True
                 break
         if not placed:
-            domain_clusters.append({"qs": qs, "qe": qe})
+            merged.append({"qs": dc["qs"], "qe": dc["qe"]})
 
-    domain_clusters.sort(key=lambda x: x["qs"])
+    merged.sort(key=lambda x: x["qs"])
 
     def _subset(df, qs, qe):
         if df is None or len(df) == 0:
@@ -148,13 +173,13 @@ def get_domain_clusters(
             lambda r: _overlap_fraction(
                 int(r.get("qstart", 0)), int(r.get("qend", 0)), qs, qe
             ) >= min_overlap,
-            axis=1
+            axis=1,
         )
         return df[mask].reset_index(drop=True)
 
     results = []
-    for i, dc in enumerate(domain_clusters):
-        qs, qe = dc["qs"], dc["qe"]
+    for i, dc in enumerate(merged):
+        qs, qe  = dc["qs"], dc["qe"]
         sub_seq = _subset(df_seq, qs, qe)
         sub_str = _subset(df_str, qs, qe)
         sub_hh  = _subset(df_hh,  qs, qe)
@@ -534,6 +559,7 @@ def fuse_results_three(
         hh_cls = best_hh["sccs"][0] if best_hh and best_hh["sccs"] not in ("—","?","") else "?"
         valid_cls = [c for c in [st_cls, hh_cls] if c != "?"]
         most_common_cls = max(set(valid_cls), key=valid_cls.count) if valid_cls else "?"
+        local_agreed_sccs = most_common_cls  # FIX: compute locally, not inherited from seq loop
         rows.append({
             "scope_domain":  "—",
             "sccs":          "—",
@@ -543,7 +569,7 @@ def fuse_results_three(
             "evidence":      "two_arms" if best_hh else "struct_only",
             "votes":         votes,
             "arms_classes":  "/".join([st_cls, hh_cls] if best_hh else [st_cls]),
-            "agreed_sccs":   agreed_sccs,
+            "agreed_sccs":   local_agreed_sccs,
             "agreed_cath":   th["cath_code"] or "—",
             "agreed_pdb":    th["domain"][:4].lower(),
             "ensemble_score":round(score, 4),

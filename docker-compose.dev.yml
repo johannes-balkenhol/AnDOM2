@@ -1,0 +1,24 @@
+services:
+  andom2-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: andom2-dev
+    restart: unless-stopped
+    ports:
+      - "8502:8501"
+    volumes:
+      # Live code mount — edit files on host, changes appear instantly
+      - ./app.py:/app/app.py:ro
+      - ./src:/app/src:ro
+      - ./config.py:/app/config.py:ro
+      - ./docs:/app/docs:ro
+      # Data shared with prod (read-only)
+      - ./data:/app/data:ro
+      # Separate output dir so dev jobs don't mix with prod
+      - ./output_dev:/app/output
+    environment:
+      - ANDOM_OUTPUT_DIR=/app/output
+      - ANDOM_ENV=development
+    mem_limit: 8g
+    cpus: "3"
