@@ -232,7 +232,7 @@ def render_three_domain_maps(df_seq, df_str, df_hh, seq_len):
                 ';border-radius:2px;flex:1;border:0.5px solid #e0e3ea">' + inner + '</div>')
 
     def _row(lbl, sub, col, inner, ok):
-        return ('<div style="display:flex;align-items:center;margin-bottom:2px">'
+        return ('<div style="display:flex;align-items:center;margin-bottom:3px">'
                 '<span style="width:68px;flex-shrink:0;font-size:10px;font-weight:500;color:'
                 + col + ';line-height:1.1">' + lbl +
                 '<br><span style="font-size:8px;font-weight:400;color:#bbb">' + sub + '</span>'
@@ -309,19 +309,19 @@ def render_three_domain_maps(df_seq, df_str, df_hh, seq_len):
         block = dom_hdr
         # Seq arm
         block += ('<div style="font-size:9px;color:#3B82F6;padding-left:68px;'
-                  'border-bottom:0.5px solid #eef;margin-bottom:2px">Seq arm</div>')
+                  'border-bottom:0.5px solid #eef;margin-bottom:3px">Seq arm</div>')
         block += _row('SCOPe','class+sccs','#3B82F6', sq_sc if sq_ok else no_h, sq_ok)
         block += _row('CATH', 'via lookup', '#3B82F6', sq_ca if sq_ok else no_h, sq_ok)
         block += _row('PDB',  'top hits',   '#3B82F6', sq_pb if sq_ok else no_h, sq_ok)
         # Struct arm
         block += ('<div style="font-size:9px;color:#0F6E56;padding-left:68px;'
-                  'border-bottom:0.5px solid #eef;margin-top:4px;margin-bottom:2px">Struct arm</div>')
+                  'border-bottom:0.5px solid #eef;margin-top:4px;margin-bottom:3px">Struct arm</div>')
         block += _row('SCOPe','crosswalk','#0F6E56', st_sc if st_ok else no_h, st_ok)
         block += _row('CATH', 'direct',   '#0F6E56', st_ca if st_ok else no_h, st_ok)
         block += _row('PDB',  'top hits', '#0F6E56', st_pb if st_ok else no_h, st_ok)
         # HH arm
         block += ('<div style="font-size:9px;color:#7F77DD;padding-left:68px;'
-                  'border-bottom:0.5px solid #eef;margin-top:4px;margin-bottom:2px">Profile arm</div>')
+                  'border-bottom:0.5px solid #eef;margin-top:4px;margin-bottom:3px">Profile arm</div>')
         block += _row('SCOPe','direct sccs','#7F77DD', hh_sc if hh_ok else no_h, hh_ok)
         return block
 
@@ -355,15 +355,15 @@ def render_three_domain_maps(df_seq, df_str, df_hh, seq_len):
         hh_sc,hh_ca,hh_pb,hh_ok = _hh_segs(df_hh,  seq_len)
         no_h = '<span style="font-size:9px;color:#ccc;padding-left:4px">no hits</span>'
         blocks_html = ''
-        blocks_html += '<div style="font-size:9px;color:#3B82F6;padding-left:68px;border-bottom:0.5px solid #eef;margin-bottom:2px">Seq arm</div>'
+        blocks_html += '<div style="font-size:9px;color:#3B82F6;padding-left:68px;border-bottom:0.5px solid #eef;margin-bottom:3px">Seq arm</div>'
         blocks_html += _row('SCOPe','class+sccs','#3B82F6', sq_sc if sq_ok else no_h, sq_ok)
         blocks_html += _row('CATH', 'via lookup', '#3B82F6', sq_ca if sq_ok else no_h, sq_ok)
         blocks_html += _row('PDB',  'top hits',   '#3B82F6', sq_pb if sq_ok else no_h, sq_ok)
-        blocks_html += '<div style="font-size:9px;color:#0F6E56;padding-left:68px;border-bottom:0.5px solid #eef;margin-top:4px;margin-bottom:2px">Struct arm</div>'
+        blocks_html += '<div style="font-size:9px;color:#0F6E56;padding-left:68px;border-bottom:0.5px solid #eef;margin-top:4px;margin-bottom:3px">Struct arm</div>'
         blocks_html += _row('SCOPe','crosswalk','#0F6E56', st_sc if st_ok else no_h, st_ok)
         blocks_html += _row('CATH', 'direct',   '#0F6E56', st_ca if st_ok else no_h, st_ok)
         blocks_html += _row('PDB',  'top hits', '#0F6E56', st_pb if st_ok else no_h, st_ok)
-        blocks_html += '<div style="font-size:9px;color:#7F77DD;padding-left:68px;border-bottom:0.5px solid #eef;margin-top:4px;margin-bottom:2px">Profile arm</div>'
+        blocks_html += '<div style="font-size:9px;color:#7F77DD;padding-left:68px;border-bottom:0.5px solid #eef;margin-top:4px;margin-bottom:3px">Profile arm</div>'
         blocks_html += _row('SCOPe','direct sccs','#7F77DD', hh_sc if hh_ok else no_h, hh_ok)
 
     n_rows = len(domains) * 7 if domains else 7
@@ -441,6 +441,15 @@ def render_compact_summary(df_seq, df_str, df_hh, fused, seq_len):
         ev          = top.get("evidence","") if top is not None else ""
         agreed_sccs = ((top.get("agreed_sccs","—") or "—").lstrip("~")) if top is not None else "—"
         agreed_cath = top.get("agreed_cath","—") if top is not None else "—"
+        # Override: prefer seq arm sccs/cath (more specific than HH arm)
+        if sub_seq is not None and len(sub_seq) > 0 and 'target' in sub_seq.columns:
+            _sq0 = sub_seq.iloc[0]
+            _sq_sccs = lk.get(str(_sq0['target']), {}).get('sccs', '')
+            if _sq_sccs and _sq_sccs not in ('--', '?', ''):
+                agreed_sccs = _sq_sccs.lstrip('~')
+            _sq_cc = get_cath_code(str(_sq0['target']))
+            if _sq_cc and _sq_cc not in ('--', '?', ''):
+                agreed_cath = _sq_cc
         score       = float(top.get("ensemble_score",0)) if top is not None else 0.0
         arms_cls    = top.get("arms_classes","") if top is not None else ""
         top_pdb     = ""
