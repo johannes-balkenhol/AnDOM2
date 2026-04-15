@@ -207,25 +207,22 @@ def render_three_domain_maps(df_seq, df_str, df_hh, seq_len):
     import streamlit.components.v1 as components
     import math
     from db.lookup import get_cath_code, cath_code_to_scop_class
+    from search.ensemble import get_domain_clusters, cluster_hits_by_region
     lk = lookup.all_domains()
-    MAX_HITS = 5
 
-    def _pdb(d):
-        try: return d[1:5].lower()
-        except: return ''
+    # Get domain boundaries for sectioned display
+    domains = get_domain_clusters(df_seq, df_str, df_hh, min_overlap=0.6)
 
-    def _seg(qs, qe, color, opacity, label, tip):
+    def _seg(qs, qe, color, opacity, label, tip, seq_len):
         l = (qs / seq_len) * 100
-        w = max(((qe - qs) / seq_len) * 100, 1.2)
+        w = max(((qe - qs) / seq_len) * 100, 1.0)
         ts = tip.replace('"', '&quot;').replace("'", '&#39;')
-        lbl = ''
-        if w > 6:
-            lbl = ('<span style="font-size:9px;color:rgba(255,255,255,0.92);white-space:nowrap;'
-                   'overflow:hidden;text-overflow:ellipsis;padding:0 3px;line-height:14px">'
-                   + label + '</span>')
+        lbl = ('<span style="font-size:9px;color:rgba(255,255,255,0.92);'
+               'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'
+               'padding:0 3px;line-height:14px">' + label + '</span>') if w > 5 else ''
         sty = ('position:absolute;top:1px;left:%.2f%%;width:%.2f%%;height:13px;'
-               'background:%s;opacity:%.2f;border-radius:2px;overflow:hidden;cursor:default'
-               ) % (l, w, color, opacity)
+               'background:%s;opacity:%.2f;border-radius:2px;overflow:hidden;'
+               'cursor:default') % (l, w, color, opacity)
         return ('<div onmouseover="T(\'' + ts + '\')" onmouseout="T()"'
                 ' style="' + sty + '">' + lbl + '</div>')
 
@@ -236,87 +233,99 @@ def render_three_domain_maps(df_seq, df_str, df_hh, seq_len):
 
     def _row(lbl, sub, col, inner, ok):
         return ('<div style="display:flex;align-items:center;margin-bottom:2px">'
-                '<span style="width:70px;flex-shrink:0;font-size:10px;font-weight:500;color:'
+                '<span style="width:68px;flex-shrink:0;font-size:10px;font-weight:500;color:'
                 + col + ';line-height:1.1">' + lbl +
                 '<br><span style="font-size:8px;font-weight:400;color:#bbb">' + sub + '</span>'
                 '</span>' + _track(inner, ok) + '</div>')
 
-    def _ghdr(lbl, col, note=''):
-        n = ('<span style="margin-left:auto;font-size:9px;color:#ccc;font-style:italic">'
-             + note + '</span>') if note else ''
-        return ('<div style="display:flex;align-items:center;padding-left:70px;'
-                'border-bottom:0.5px solid #e8eaf0;padding-bottom:2px;margin-bottom:3px">'
-                '<span style="font-size:10px;font-weight:500;color:' + col + '">' + lbl + '</span>'
-                + n + '</div>')
-
-    def _seq(df):
-        if df is None or len(df) == 0: return '', '', '', False
+    def _seq_segs(df, sl):
         sc = ca = pb = ''
-        for _, r in df.head(MAX_HITS).iterrows():
-            qs = int(r.get('qstart', 0)); qe = int(r.get('qend', 0))
+        if df is None or len(df) == 0: return sc, ca, pb, False
+        for _, r in df.head(5).iterrows():
+            qs = int(r.get('qstart',0)); qe = int(r.get('qend',0))
             tgt = str(r['target'])
-            cls  = lk.get(tgt, {}).get('cls', '?')
-            sccs = lk.get(tgt, {}).get('sccs', '?')
-            desc = lk.get(tgt, {}).get('desc', '')[:40]
+            cls  = lk.get(tgt,{}).get('cls','?')
+            sccs = lk.get(tgt,{}).get('sccs','?')
+            desc = lk.get(tgt,{}).get('desc','')[:35]
             ev   = float(r['evalue'])
             cc   = get_cath_code(tgt) or '?'
-            pdb  = _pdb(tgt)
-            col  = SCOP_COLORS.get(cls, '#888')
-            op   = max(0.3, min(0.95, -math.log10(max(ev, 1e-300)) / 30))
-            sc += _seg(qs, qe, col, op, sccs,
-                       'SCOPe: %s | e=%.1e | %d-%d aa | %s' % (sccs, ev, qs, qe, desc))
-            ca += _seg(qs, qe, col, op * 0.85, cc,
-                       'CATH: %s | %s | %d-%d aa' % (cc, tgt, qs, qe))
-            pb += _seg(qs, qe, '#3B82F6', op, pdb.upper(),
-                       'PDB: %s | e=%.1e | %d-%d aa' % (pdb.upper(), ev, qs, qe))
+            pdb  = tgt[1:5].lower() if len(tgt) >= 5 else ''
+            col  = SCOP_COLORS.get(cls,'#888')
+            op   = max(0.3, min(0.95, -math.log10(max(ev,1e-300))/30))
+            sc += _seg(qs,qe,col,op,sccs,'SCOPe:%s e=%.1e %d-%daa %s'%(sccs,ev,qs,qe,desc),sl)
+            ca += _seg(qs,qe,col,op*0.85,cc,'CATH:%s %s %d-%daa'%(cc,tgt,qs,qe),sl)
+            pb += _seg(qs,qe,'#3B82F6',op,pdb.upper(),'PDB:%s e=%.1e %d-%daa'%(pdb.upper(),ev,qs,qe),sl)
         return sc, ca, pb, True
 
-    def _str(df):
-        if df is None or len(df) == 0: return '', '', '', False
+    def _str_segs(df, sl):
         sc = ca = pb = ''
-        for _, r in df.head(MAX_HITS).iterrows():
-            qs = int(r.get('qstart', 0)); qe = int(r.get('qend', 0))
+        if df is None or len(df) == 0: return sc, ca, pb, False
+        for _, r in df.head(5).iterrows():
+            qs = int(r.get('qstart',0)); qe = int(r.get('qend',0))
             tgt  = str(r['target'])
             cc   = get_cath_code(tgt) or '?'
             cls  = cath_code_to_scop_class(cc) if cc and cc != '?' else '?'
-            lddt = float(r.get('lddt', 0.7))
+            lddt = float(r.get('lddt',0.7))
             pdb  = tgt[:4].lower()
-            col  = SCOP_COLORS.get(cls, '#888')
-            op   = 0.45 + 0.55 * lddt
-            sc += _seg(qs, qe, col, op, 'cls:' + cls,
-                       'CATH->SCOPe: class %s | lDDT=%.2f | %d-%d aa' % (cls, lddt, qs, qe))
-            ca += _seg(qs, qe, '#0F6E56', op, cc,
-                       'CATH: %s | lDDT=%.2f | %d-%d aa' % (cc, lddt, qs, qe))
-            pb += _seg(qs, qe, '#0F6E56', op * 0.9, pdb.upper(),
-                       'PDB: %s | lDDT=%.2f | %d-%d aa' % (pdb.upper(), lddt, qs, qe))
+            col  = SCOP_COLORS.get(cls,'#888')
+            op   = 0.45+0.55*lddt
+            sc += _seg(qs,qe,col,op,'cls:'+cls,'CATH->SCOPe:class %s lDDT=%.2f %d-%daa'%(cls,lddt,qs,qe),sl)
+            ca += _seg(qs,qe,'#0F6E56',op,cc,'CATH:%s lDDT=%.2f %d-%daa'%(cc,lddt,qs,qe),sl)
+            pb += _seg(qs,qe,'#0F6E56',op*0.9,pdb.upper(),'PDB:%s lDDT=%.2f %d-%daa'%(pdb.upper(),lddt,qs,qe),sl)
         return sc, ca, pb, True
 
-    def _hh(df):
-        if df is None or len(df) == 0: return '', '', '', False
+    def _hh_segs(df, sl):
         sc = ca = pb = ''
-        for _, r in df.head(MAX_HITS).iterrows():
-            qs   = int(r.get('qstart', 0)); qe = int(r.get('qend', 0))
-            sccs = str(r.get('sccs', '?'))
+        if df is None or len(df) == 0: return sc, ca, pb, False
+        for _, r in df.head(5).iterrows():
+            qs   = int(r.get('qstart',0)); qe = int(r.get('qend',0))
+            sccs = str(r.get('sccs','?'))
             cls  = sccs[0] if sccs not in ('--','?','') and not sccs.startswith('~') else '?'
-            prob = float(r.get('prob', 50)) / 100
-            pdb  = str(r.get('pdb', ''))[:4].lower()
-            name = str(r.get('hit_name', pdb))
-            cc   = str(r.get('cath_code', '?')) or '?'
-            col  = SCOP_COLORS.get(cls, '#888')
-            op   = 0.3 + 0.7 * prob
-            sc += _seg(qs, qe, col, op, sccs,
-                       'HHblits: %s | SCOPe: %s | prob=%.0f%% | %d-%d aa' % (name, sccs, prob*100, qs, qe))
-            ca += _seg(qs, qe, '#7F77DD', op * 0.85, cc,
-                       'CATH: %s | %s | %d-%d aa' % (cc, name, qs, qe))
-            pb += _seg(qs, qe, '#7F77DD', op, pdb.upper(),
-                       'PDB: %s | prob=%.0f%% | %d-%d aa' % (pdb.upper(), prob*100, qs, qe))
+            prob = float(r.get('prob',50))/100
+            pdb  = str(r.get('pdb',''))[:4].lower()
+            name = str(r.get('hit_name',pdb))
+            cc   = str(r.get('cath_code','?')) or '?'
+            col  = SCOP_COLORS.get(cls,'#888')
+            op   = 0.3+0.7*prob
+            sc += _seg(qs,qe,col,op,sccs,'HH:%s SCOPe:%s prob=%.0f%% %d-%daa'%(name,sccs,prob*100,qs,qe),sl)
+            ca += _seg(qs,qe,'#7F77DD',op*0.85,cc,'CATH:%s %s %d-%daa'%(cc,name,qs,qe),sl)
+            pb += _seg(qs,qe,'#7F77DD',op,pdb.upper(),'PDB:%s prob=%.0f%% %d-%daa'%(pdb.upper(),prob*100,qs,qe),sl)
         return sc, ca, pb, True
 
-    sq_sc, sq_ca, sq_pb, sq_ok = _seq(df_seq)
-    st_sc, st_ca, st_pb, st_ok = _str(df_str)
-    hh_sc, hh_ca, hh_pb, hh_ok = _hh(df_hh)
-    no_h = '<span style="font-size:10px;color:#ccc;padding-left:4px">no hits</span>'
+    def _domain_block(dom_idx, qs, qe, sub_seq, sub_str, sub_hh, sl, total_domains):
+        sq_sc,sq_ca,sq_pb,sq_ok = _seq_segs(sub_seq, sl)
+        st_sc,st_ca,st_pb,st_ok = _str_segs(sub_str, sl)
+        hh_sc,hh_ca,hh_pb,hh_ok = _hh_segs(sub_hh,  sl)
+        no_h = '<span style="font-size:9px;color:#ccc;padding-left:4px">no hits</span>'
 
+        # Domain label header
+        if total_domains > 1:
+            dom_hdr = ('<div style="font-size:10px;font-weight:500;color:#555;'
+                       'margin-bottom:3px;margin-top:6px">'
+                       'Domain %d &nbsp;·&nbsp; aa %d–%d</div>' % (dom_idx, qs, qe))
+        else:
+            dom_hdr = ''
+
+        block = dom_hdr
+        # Seq arm
+        block += ('<div style="font-size:9px;color:#3B82F6;padding-left:68px;'
+                  'border-bottom:0.5px solid #eef;margin-bottom:2px">Seq arm</div>')
+        block += _row('SCOPe','class+sccs','#3B82F6', sq_sc if sq_ok else no_h, sq_ok)
+        block += _row('CATH', 'via lookup', '#3B82F6', sq_ca if sq_ok else no_h, sq_ok)
+        block += _row('PDB',  'top hits',   '#3B82F6', sq_pb if sq_ok else no_h, sq_ok)
+        # Struct arm
+        block += ('<div style="font-size:9px;color:#0F6E56;padding-left:68px;'
+                  'border-bottom:0.5px solid #eef;margin-top:4px;margin-bottom:2px">Struct arm</div>')
+        block += _row('SCOPe','crosswalk','#0F6E56', st_sc if st_ok else no_h, st_ok)
+        block += _row('CATH', 'direct',   '#0F6E56', st_ca if st_ok else no_h, st_ok)
+        block += _row('PDB',  'top hits', '#0F6E56', st_pb if st_ok else no_h, st_ok)
+        # HH arm
+        block += ('<div style="font-size:9px;color:#7F77DD;padding-left:68px;'
+                  'border-bottom:0.5px solid #eef;margin-top:4px;margin-bottom:2px">Profile arm</div>')
+        block += _row('SCOPe','direct sccs','#7F77DD', hh_sc if hh_ok else no_h, hh_ok)
+        return block
+
+    # Ticks ruler
     ticks = ''.join(
         '<span style="position:absolute;left:%.0f%%;font-size:9px;color:#ccc;'
         'transform:translateX(-50%%)">%d</span>' % (p, int(p * seq_len / 100))
@@ -327,36 +336,56 @@ def render_three_domain_maps(df_seq, df_str, df_hh, seq_len):
         '<span style="font-size:9px">' + k + '</span>'
         for k in SCOP_CLASSES
     )
-    parts = [
-        '<!DOCTYPE html><html><head><meta charset="utf-8">',
-        '<style>body{margin:0;padding:4px 0 2px;font-family:-apple-system,sans-serif;background:transparent}.ag{margin-bottom:8px}</style>',
-        '</head><body>',
-        '<div id="tip" style="height:16px;font-size:10px;font-family:monospace;color:#666;',
-        'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:6px"></div>',
-        '<div style="position:relative;height:12px;margin-bottom:6px">',
-        '<div style="position:absolute;top:6px;left:0;right:0;height:0.5px;background:#dde"></div>',
-        ticks, '</div>',
-        '<div class="ag">',
-        _ghdr('Seq arm - MMseqs2 / SCOPe', '#3B82F6', '' if sq_ok else 'no hits'),
-        _row('SCOPe', 'class+sccs', '#3B82F6', sq_sc if sq_ok else no_h, sq_ok),
-        _row('CATH',  'via lookup', '#3B82F6', sq_ca if sq_ok else no_h, sq_ok),
-        _row('PDB',   'top hits',   '#3B82F6', sq_pb if sq_ok else no_h, sq_ok),
-        '</div><div class="ag">',
-        _ghdr('Struct arm - ESMFold / CATH50', '#0F6E56', '' if st_ok else 'no hits'),
-        _row('SCOPe', 'crosswalk',  '#0F6E56', st_sc if st_ok else no_h, st_ok),
-        _row('CATH',  'direct',     '#0F6E56', st_ca if st_ok else no_h, st_ok),
-        _row('PDB',   'top hits',   '#0F6E56', st_pb if st_ok else no_h, st_ok),
-        '</div><div class="ag">',
-        _ghdr('Profile arm - HHblits / PDB70', '#7F77DD', '' if hh_ok else 'disabled / no hits'),
-        _row('SCOPe', 'direct sccs', '#7F77DD', hh_sc if hh_ok else no_h, hh_ok),
-        _row('CATH',  'via PDB hit', '#7F77DD', hh_ca if hh_ok else no_h, hh_ok),
-        _row('PDB',   'top hits',    '#7F77DD', hh_pb if hh_ok else no_h, hh_ok),
-        '</div>',
-        '<div style="font-size:9px;color:#ccc;margin-top:2px">' + legend + ' &nbsp;·&nbsp; opacity = confidence</div>',
-        '<script>function T(s){document.getElementById("tip").textContent=s||"";}',
-        '</script></body></html>',
-    ]
-    components.html(''.join(parts), height=260, scrolling=False)
+
+    # Build per-domain blocks
+    if domains:
+        blocks_html = ''
+        for dom in domains:
+            blocks_html += _domain_block(
+                dom['domain_idx'], dom['qstart'], dom['qend'],
+                dom['df_seq_sub'], dom['df_str_sub'], dom['df_hh_sub'],
+                seq_len, len(domains)
+            )
+            if dom['domain_idx'] < len(domains):
+                blocks_html += '<div style="border-top:1px dashed #e0e0e0;margin:6px 0"></div>'
+    else:
+        # Fallback: global bars
+        sq_sc,sq_ca,sq_pb,sq_ok = _seq_segs(df_seq, seq_len)
+        st_sc,st_ca,st_pb,st_ok = _str_segs(df_str, seq_len)
+        hh_sc,hh_ca,hh_pb,hh_ok = _hh_segs(df_hh,  seq_len)
+        no_h = '<span style="font-size:9px;color:#ccc;padding-left:4px">no hits</span>'
+        blocks_html = ''
+        blocks_html += '<div style="font-size:9px;color:#3B82F6;padding-left:68px;border-bottom:0.5px solid #eef;margin-bottom:2px">Seq arm</div>'
+        blocks_html += _row('SCOPe','class+sccs','#3B82F6', sq_sc if sq_ok else no_h, sq_ok)
+        blocks_html += _row('CATH', 'via lookup', '#3B82F6', sq_ca if sq_ok else no_h, sq_ok)
+        blocks_html += _row('PDB',  'top hits',   '#3B82F6', sq_pb if sq_ok else no_h, sq_ok)
+        blocks_html += '<div style="font-size:9px;color:#0F6E56;padding-left:68px;border-bottom:0.5px solid #eef;margin-top:4px;margin-bottom:2px">Struct arm</div>'
+        blocks_html += _row('SCOPe','crosswalk','#0F6E56', st_sc if st_ok else no_h, st_ok)
+        blocks_html += _row('CATH', 'direct',   '#0F6E56', st_ca if st_ok else no_h, st_ok)
+        blocks_html += _row('PDB',  'top hits', '#0F6E56', st_pb if st_ok else no_h, st_ok)
+        blocks_html += '<div style="font-size:9px;color:#7F77DD;padding-left:68px;border-bottom:0.5px solid #eef;margin-top:4px;margin-bottom:2px">Profile arm</div>'
+        blocks_html += _row('SCOPe','direct sccs','#7F77DD', hh_sc if hh_ok else no_h, hh_ok)
+
+    n_rows = len(domains) * 7 if domains else 7
+    height = 80 + n_rows * 20
+
+    html = (
+        '<!DOCTYPE html><html><head><meta charset="utf-8">'
+        '<style>body{margin:0;padding:4px 0 2px;font-family:-apple-system,sans-serif;background:transparent}</style>'
+        '</head><body>'
+        '<div id="tip" style="height:16px;font-size:10px;font-family:monospace;color:#666;'
+        'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:4px"></div>'
+        '<div style="position:relative;height:12px;margin-bottom:4px">'
+        '<div style="position:absolute;top:6px;left:0;right:0;height:0.5px;background:#dde"></div>'
+        + ticks + '</div>'
+        + blocks_html
+        + '<div style="font-size:9px;color:#ccc;margin-top:4px">' + legend + ' &nbsp;·&nbsp; opacity=confidence</div>'
+        '<script>function T(s){document.getElementById("tip").textContent=s||"";}</script>'
+        '</body></html>'
+    )
+
+    import streamlit.components.v1 as components
+    components.html(html, height=height, scrolling=False)
 
 
 def render_compact_summary(df_seq, df_str, df_hh, fused, seq_len):
@@ -383,6 +412,14 @@ def render_compact_summary(df_seq, df_str, df_hh, fused, seq_len):
     }
     CATH_FULL = {"1":"Mainly alpha","2":"Mainly beta","3":"Alpha/beta","4":"Few secondary"}
 
+    # Check for uncovered N/C terminal regions
+    if domains:
+        min_start = min(d["qstart"] for d in domains)
+        max_end   = max(d["qend"]   for d in domains)
+        if min_start > 30:
+            st.caption(f"⚠️ aa 1–{min_start-1} has no hits — possible undetected domain or disordered region. Try raising e-value cutoff to 0.01.")
+        if seq_len - max_end > 30:
+            st.caption(f"⚠️ aa {max_end+1}–{seq_len} has no hits — possible undetected domain or disordered region.")
     if multi:
         st.markdown(
             f'<div style="font-size:13px;font-weight:500;margin:14px 0 8px">' +
@@ -766,24 +803,53 @@ with page[0]:
             # ── ENSEMBLE TABLE ────────────────────────────────────────────────
             if not fused.empty:
                 with st.expander("Ensemble ranked hits table", expanded=False):
+                    from search.ensemble import get_domain_clusters as _gdc_ens
+                    _domains_ens = _gdc_ens(df_seq, df_str, df_hh, min_overlap=0.6)
                     ev_icon = {"all_three":"🟢","two_arms":"🟡","seq_only":"🔵","struct_only":"🟠","hhblits_only":"🟣"}
-                    fused["ev"] = fused["evidence"].map(ev_icon)
-                    fused["cath_d"] = fused["cath_domain"].apply(clean_cath_domain)
-                    for col in ["seq_evalue","struct_evalue","hh_evalue"]:
-                        if col in fused.columns:
-                            fused[col] = fused[col].apply(lambda x: fmt_e(x) if x is not None and str(x) not in ("None","nan") else "—")
-                    fused["hh_prob"] = fused["hh_prob"].apply(lambda x: f"{float(x):.0f}%" if x is not None and str(x) not in ("None","nan") else "—")
-                    n_all=(fused["evidence"]=="all_three").sum(); n_two=(fused["evidence"]=="two_arms").sum()
-                    n_seq=(fused["evidence"]=="seq_only").sum();  n_st=(fused["evidence"]=="struct_only").sum()
-                    n_hh=(fused["evidence"]=="hhblits_only").sum()
-                    cc1,cc2,cc3,cc4,cc5 = st.columns(5)
-                    cc1.metric("🟢 All three",n_all); cc2.metric("🟡 Two arms",n_two)
-                    cc3.metric("🔵 Seq only",n_seq);  cc4.metric("🟠 Struct only",n_st); cc5.metric("🟣 Profile only",n_hh)
-                    st.dataframe(
-                        fused[["rank","ev","scope_domain","sccs","cath_d","cath_code","hh_hit","votes","ensemble_score","qstart","qend","seq_evalue","struct_evalue","hh_evalue","hh_prob","lddt"]
-                        ].rename(columns={"ev":"","scope_domain":"SCOPe domain","sccs":"SCOP class","cath_d":"CATH domain","cath_code":"CATH code","hh_hit":"HHblits hit","votes":"Votes","ensemble_score":"Score","qstart":"Start aa","qend":"End aa","seq_evalue":"Seq e-val","struct_evalue":"Struct e-val","hh_evalue":"HH e-val","hh_prob":"HH prob","lddt":"lDDT"}),
-                        use_container_width=True, hide_index=True,
-                    )
+                    def _prep_df(df):
+                        df = df.copy()
+                        df["ev"] = df["evidence"].map(ev_icon)
+                        df["cath_d"] = df["cath_domain"].apply(clean_cath_domain)
+                        for col in ["seq_evalue","struct_evalue","hh_evalue"]:
+                            if col in df.columns:
+                                df[col] = df[col].apply(lambda x: fmt_e(x) if x is not None and str(x) not in ("None","nan") else "—")
+                        df["hh_prob"] = df["hh_prob"].apply(lambda x: f"{float(x):.0f}%" if x is not None and str(x) not in ("None","nan") else "—")
+                        # Cap hhblits_only flood
+                        df = pd.concat([
+                            df[df["evidence"] != "hhblits_only"],
+                            df[df["evidence"] == "hhblits_only"].head(10)
+                        ]).sort_values("ensemble_score", ascending=False).reset_index(drop=True)
+                        if "rank" in df.columns:
+                            df["rank"] = range(1, len(df)+1)
+                        else:
+                            df.insert(0, "rank", range(1, len(df)+1))
+                        return df
+                    _cols = ["rank","ev","scope_domain","sccs","cath_d","cath_code","hh_hit","votes","ensemble_score","qstart","qend","seq_evalue","struct_evalue","hh_evalue","hh_prob","lddt"]
+                    _rename = {"ev":"","scope_domain":"SCOPe domain","sccs":"SCOP class","cath_d":"CATH domain","cath_code":"CATH code","hh_hit":"HHblits hit","votes":"Votes","ensemble_score":"Score","qstart":"Start aa","qend":"End aa","seq_evalue":"Seq e-val","struct_evalue":"Struct e-val","hh_evalue":"HH e-val","hh_prob":"HH prob","lddt":"lDDT"}
+                    if len(_domains_ens) > 1:
+                        _ens_tab_labels = [f"Domain {d['domain_idx']} · aa {d['qstart']}–{d['qend']}" for d in _domains_ens]
+                        _ens_tabs = st.tabs(_ens_tab_labels)
+                        for _dom_e, _tab_e in zip(_domains_ens, _ens_tabs):
+                            with _tab_e:
+                                _df_e = _dom_e["fused"]
+                                if _df_e is not None and not _df_e.empty:
+                                    _df_e = _prep_df(_df_e)
+                                    n_all=(_df_e["evidence"]=="all_three").sum(); n_two=(_df_e["evidence"]=="two_arms").sum()
+                                    n_hh=(_df_e["evidence"]=="hhblits_only").sum()
+                                    _c1,_c2,_c3 = st.columns(3)
+                                    _c1.metric("🟢 All three",n_all); _c2.metric("🟡 Two arms",n_two); _c3.metric("🟣 Profile only (shown: max 10)",n_hh)
+                                    st.dataframe(_df_e[[c for c in _cols if c in _df_e.columns]].rename(columns=_rename), use_container_width=True, hide_index=True)
+                                else:
+                                    st.info("No hits for this domain.")
+                    else:
+                        _df_g = _prep_df(fused)
+                        n_all=(_df_g["evidence"]=="all_three").sum(); n_two=(_df_g["evidence"]=="two_arms").sum()
+                        n_seq=(_df_g["evidence"]=="seq_only").sum(); n_st=(_df_g["evidence"]=="struct_only").sum()
+                        n_hh=(_df_g["evidence"]=="hhblits_only").sum()
+                        cc1,cc2,cc3,cc4,cc5 = st.columns(5)
+                        cc1.metric("🟢 All three",n_all); cc2.metric("🟡 Two arms",n_two)
+                        cc3.metric("🔵 Seq only",n_seq); cc4.metric("🟠 Struct only",n_st); cc5.metric("🟣 Profile only (max 10)",n_hh)
+                        st.dataframe(_df_g[[c for c in _cols if c in _df_g.columns]].rename(columns=_rename), use_container_width=True, hide_index=True)
                     st.download_button("Download TSV", fused.to_csv(sep="\t",index=False), file_name="AnDOM_results.tsv", mime="text/tab-separated-values")
 
     st.divider()
