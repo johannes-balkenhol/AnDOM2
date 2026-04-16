@@ -265,11 +265,11 @@ def render_three_domain_maps(df_seq, df_str, df_hh, seq_len):
             pdb  = tgt[1:5].lower() if len(tgt)>=5 else ''
             col  = SCOP_COLORS.get(cls,'#888')
             op   = max(0.3, min(0.95, -math.log10(max(ev,1e-300))/30))
-            sc += _seg(qs,qe,col,op,sccs,
+            sc += _seg(qs,qe,col,op,sccs if _hi==0 else '',
                        'SCOPe: %s | e=%.1e | %d-%d aa | %s'%(sccs,ev,qs,qe,desc))
-            ca += _seg(qs,qe,col,op*0.8,cc,
+            ca += _seg(qs,qe,col,op*0.8,cc if _hi==0 else '',
                        'CATH: %s | %s | %d-%d aa'%(cc,tgt,qs,qe))
-            pb += _seg(qs,qe,'#3B82F6',op,pdb.upper(),
+            pb += _seg(qs,qe,'#3B82F6',op,pdb.upper() if _hi==0 else '',
                        'PDB: %s | e=%.1e | %d-%d aa'%(pdb.upper(),ev,qs,qe))
         return [('SCOPe','#3B82F6','class · sccs',sc,True),
                 ('CATH', '#3B82F6','via lookup',  ca,True),
@@ -316,7 +316,7 @@ def render_three_domain_maps(df_seq, df_str, df_hh, seq_len):
             cc   = str(r.get('cath_code','?')) or '?'
             col  = SCOP_COLORS.get(cls,'#888')
             op   = 0.3+0.7*prob
-            sc += _seg(qs,qe,col,op,sccs,
+            sc += _seg(qs,qe,col,op,sccs if _hi==0 else '',
                        'HH: %s | SCOPe: %s | prob=%.0f%% | %d-%d aa'%(name,sccs,prob*100,qs,qe))
             ca += _seg(qs,qe,'#7F77DD',op*0.85,cc,
                        'CATH: %s | %s | %d-%d aa'%(cc,name,qs,qe))
