@@ -207,184 +207,189 @@ def render_three_domain_maps(df_seq, df_str, df_hh, seq_len):
     import streamlit.components.v1 as components
     import math
     from db.lookup import get_cath_code, cath_code_to_scop_class
-    from search.ensemble import get_domain_clusters, cluster_hits_by_region
+    from search.ensemble import get_domain_clusters
     lk = lookup.all_domains()
 
-    # Get domain boundaries for sectioned display
     domains = get_domain_clusters(df_seq, df_str, df_hh, min_overlap=0.6)
 
-    def _seg(qs, qe, color, opacity, label, tip, seq_len):
+    # ── segment builder ───────────────────────────────────────────────────
+    def _seg(qs, qe, color, opacity, label, tip):
         l = (qs / seq_len) * 100
         w = max(((qe - qs) / seq_len) * 100, 1.0)
         ts = tip.replace('"', '&quot;').replace("'", '&#39;')
-        lbl = ('<span style="font-size:9px;color:rgba(255,255,255,0.92);'
-               'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'
-               'padding:0 3px;line-height:14px">' + label + '</span>') if w > 5 else ''
-        sty = ('position:absolute;top:1px;left:%.2f%%;width:%.2f%%;height:13px;'
-               'background:%s;opacity:%.2f;border-radius:2px;overflow:hidden;'
+        inner = ''
+        if w > 4:
+            inner = ('<span style="position:absolute;left:4px;right:4px;top:50%;'
+                     'transform:translateY(-50%);font-size:10px;font-weight:500;'
+                     'color:rgba(255,255,255,0.95);white-space:nowrap;overflow:hidden;'
+                     'text-overflow:ellipsis">' + label + '</span>')
+        sty = ('position:absolute;top:1px;left:%.2f%%;width:%.2f%%;height:20px;'
+               'background:%s;opacity:%.2f;border-radius:3px;overflow:hidden;'
                'cursor:default') % (l, w, color, opacity)
         return ('<div onmouseover="T(\'' + ts + '\')" onmouseout="T()"'
-                ' style="' + sty + '">' + lbl + '</div>')
+                ' style="' + sty + '">' + inner + '</div>')
 
-    def _track(inner, ok):
-        bg = '#f0f3f8' if ok else '#f8f9fa'
-        return ('<div style="position:relative;height:15px;background:' + bg +
-                ';border-radius:2px;flex:1;border:0.5px solid #e0e3ea">' + inner + '</div>')
+    # ── single labeled bar row ────────────────────────────────────────────
+    def _bar(arm_label, arm_color, annotation, segs_html, has_hits):
+        bg = '#f0f3f8' if has_hits else '#f7f8fa'
+        no_h = ('<span style="font-size:10px;color:#bbb;padding:0 8px;'
+                'line-height:22px">no hits</span>') if not has_hits else ''
+        return (
+            '<div style="display:flex;align-items:center;margin-bottom:5px">'
+            '<div style="width:110px;flex-shrink:0;padding-right:8px;text-align:right">'
+            '<span style="font-size:10px;font-weight:600;color:' + arm_color + '">' + arm_label + '</span>'
+            '<br><span style="font-size:9px;color:#aaa">' + annotation + '</span>'
+            '</div>'
+            '<div style="position:relative;height:22px;background:' + bg + ';'
+            'border-radius:4px;flex:1;border:0.5px solid #e0e3ea">'
+            + segs_html + no_h +
+            '</div></div>'
+        )
 
-    def _row(lbl, sub, col, inner, ok):
-        return ('<div style="display:flex;align-items:center;margin-bottom:3px">'
-                '<span style="width:68px;flex-shrink:0;font-size:10px;font-weight:500;color:'
-                + col + ';line-height:1.1">' + lbl +
-                '<br><span style="font-size:8px;font-weight:400;color:#bbb">' + sub + '</span>'
-                '</span>' + _track(inner, ok) + '</div>')
-
-    def _seq_segs(df, sl):
+    # ── build segments for each arm ───────────────────────────────────────
+    def _seq_bars(df):
+        if df is None or len(df) == 0:
+            return [('SCOPe', '#3B82F6', 'class · sccs', '', False),
+                    ('CATH',  '#3B82F6', 'via lookup',   '', False),
+                    ('PDB',   '#3B82F6', 'top hits',     '', False)]
+        rows = []
         sc = ca = pb = ''
-        if df is None or len(df) == 0: return sc, ca, pb, False
         for _, r in df.head(5).iterrows():
             qs = int(r.get('qstart',0)); qe = int(r.get('qend',0))
-            tgt = str(r['target'])
+            tgt  = str(r['target'])
             cls  = lk.get(tgt,{}).get('cls','?')
             sccs = lk.get(tgt,{}).get('sccs','?')
-            desc = lk.get(tgt,{}).get('desc','')[:35]
+            desc = lk.get(tgt,{}).get('desc','')[:30]
             ev   = float(r['evalue'])
             cc   = get_cath_code(tgt) or '?'
-            pdb  = tgt[1:5].lower() if len(tgt) >= 5 else ''
+            pdb  = tgt[1:5].lower() if len(tgt)>=5 else ''
             col  = SCOP_COLORS.get(cls,'#888')
             op   = max(0.3, min(0.95, -math.log10(max(ev,1e-300))/30))
-            sc += _seg(qs,qe,col,op,sccs,'SCOPe:%s e=%.1e %d-%daa %s'%(sccs,ev,qs,qe,desc),sl)
-            ca += _seg(qs,qe,col,op*0.85,cc,'CATH:%s %s %d-%daa'%(cc,tgt,qs,qe),sl)
-            pb += _seg(qs,qe,'#3B82F6',op,pdb.upper(),'PDB:%s e=%.1e %d-%daa'%(pdb.upper(),ev,qs,qe),sl)
-        return sc, ca, pb, True
+            sc += _seg(qs,qe,col,op,sccs,
+                       'SCOPe: %s | e=%.1e | %d-%d aa | %s'%(sccs,ev,qs,qe,desc))
+            ca += _seg(qs,qe,col,op*0.8,cc,
+                       'CATH: %s | %s | %d-%d aa'%(cc,tgt,qs,qe))
+            pb += _seg(qs,qe,'#3B82F6',op,pdb.upper(),
+                       'PDB: %s | e=%.1e | %d-%d aa'%(pdb.upper(),ev,qs,qe))
+        return [('SCOPe','#3B82F6','class · sccs',sc,True),
+                ('CATH', '#3B82F6','via lookup',  ca,True),
+                ('PDB',  '#3B82F6','top hits',    pb,True)]
 
-    def _str_segs(df, sl):
+    def _str_bars(df):
+        if df is None or len(df) == 0:
+            return [('SCOPe','#0F6E56','crosswalk','',False),
+                    ('CATH', '#0F6E56','direct',   '',False),
+                    ('PDB',  '#0F6E56','top hits', '',False)]
         sc = ca = pb = ''
-        if df is None or len(df) == 0: return sc, ca, pb, False
         for _, r in df.head(5).iterrows():
             qs = int(r.get('qstart',0)); qe = int(r.get('qend',0))
             tgt  = str(r['target'])
             cc   = get_cath_code(tgt) or '?'
-            cls  = cath_code_to_scop_class(cc) if cc and cc != '?' else '?'
+            cls  = cath_code_to_scop_class(cc) if cc and cc!='?' else '?'
             lddt = float(r.get('lddt',0.7))
             pdb  = tgt[:4].lower()
             col  = SCOP_COLORS.get(cls,'#888')
-            op   = 0.45+0.55*lddt
-            sc += _seg(qs,qe,col,op,'cls:'+cls,'CATH->SCOPe:class %s lDDT=%.2f %d-%daa'%(cls,lddt,qs,qe),sl)
-            ca += _seg(qs,qe,'#0F6E56',op,cc,'CATH:%s lDDT=%.2f %d-%daa'%(cc,lddt,qs,qe),sl)
-            pb += _seg(qs,qe,'#0F6E56',op*0.9,pdb.upper(),'PDB:%s lDDT=%.2f %d-%daa'%(pdb.upper(),lddt,qs,qe),sl)
-        return sc, ca, pb, True
+            op   = 0.4+0.6*lddt
+            sc += _seg(qs,qe,col,op,'cls:'+cls,
+                       'CATH→SCOPe: class %s | lDDT=%.2f | %d-%d aa'%(cls,lddt,qs,qe))
+            ca += _seg(qs,qe,'#0F6E56',op,cc,
+                       'CATH: %s | lDDT=%.2f | %d-%d aa'%(cc,lddt,qs,qe))
+            pb += _seg(qs,qe,'#0F6E56',op*0.85,pdb.upper(),
+                       'PDB: %s | lDDT=%.2f | %d-%d aa'%(pdb.upper(),lddt,qs,qe))
+        return [('SCOPe','#0F6E56','crosswalk',sc,True),
+                ('CATH', '#0F6E56','direct',   ca,True),
+                ('PDB',  '#0F6E56','top hits', pb,True)]
 
-    def _hh_segs(df, sl):
+    def _hh_bars(df):
+        if df is None or len(df) == 0:
+            return [('SCOPe','#7F77DD','direct sccs','',False),
+                    ('CATH', '#7F77DD','via PDB hit','',False),
+                    ('PDB',  '#7F77DD','top hits',   '',False)]
         sc = ca = pb = ''
-        if df is None or len(df) == 0: return sc, ca, pb, False
         for _, r in df.head(5).iterrows():
             qs   = int(r.get('qstart',0)); qe = int(r.get('qend',0))
             sccs = str(r.get('sccs','?'))
             cls  = sccs[0] if sccs not in ('--','?','') and not sccs.startswith('~') else '?'
             prob = float(r.get('prob',50))/100
             pdb  = str(r.get('pdb',''))[:4].lower()
-            name = str(r.get('hit_name',pdb))
+            name = str(r.get('hit_name',pdb))[:12]
             cc   = str(r.get('cath_code','?')) or '?'
             col  = SCOP_COLORS.get(cls,'#888')
             op   = 0.3+0.7*prob
-            sc += _seg(qs,qe,col,op,sccs,'HH:%s SCOPe:%s prob=%.0f%% %d-%daa'%(name,sccs,prob*100,qs,qe),sl)
-            ca += _seg(qs,qe,'#7F77DD',op*0.85,cc,'CATH:%s %s %d-%daa'%(cc,name,qs,qe),sl)
-            pb += _seg(qs,qe,'#7F77DD',op,pdb.upper(),'PDB:%s prob=%.0f%% %d-%daa'%(pdb.upper(),prob*100,qs,qe),sl)
-        return sc, ca, pb, True
+            sc += _seg(qs,qe,col,op,sccs,
+                       'HH: %s | SCOPe: %s | prob=%.0f%% | %d-%d aa'%(name,sccs,prob*100,qs,qe))
+            ca += _seg(qs,qe,'#7F77DD',op*0.85,cc,
+                       'CATH: %s | %s | %d-%d aa'%(cc,name,qs,qe))
+            pb += _seg(qs,qe,'#7F77DD',op,pdb.upper(),
+                       'PDB: %s | prob=%.0f%% | %d-%d aa'%(pdb.upper(),prob*100,qs,qe))
+        return [('SCOPe','#7F77DD','direct sccs',sc,True),
+                ('CATH', '#7F77DD','via PDB hit', ca,True),
+                ('PDB',  '#7F77DD','top hits',    pb,True)]
 
-    def _domain_block(dom_idx, qs, qe, sub_seq, sub_str, sub_hh, sl, total_domains):
-        sq_sc,sq_ca,sq_pb,sq_ok = _seq_segs(sub_seq, sl)
-        st_sc,st_ca,st_pb,st_ok = _str_segs(sub_str, sl)
-        hh_sc,hh_ca,hh_pb,hh_ok = _hh_segs(sub_hh,  sl)
-        no_h = '<span style="font-size:9px;color:#ccc;padding-left:4px">no hits</span>'
-
-        # Domain label header
-        if total_domains > 1:
-            dom_hdr = ('<div style="font-size:10px;font-weight:500;color:#555;'
-                       'margin-bottom:3px;margin-top:6px">'
-                       'Domain %d &nbsp;·&nbsp; aa %d–%d</div>' % (dom_idx, qs, qe))
-        else:
-            dom_hdr = ''
-
-        block = dom_hdr
-        # Seq arm
-        block += ('<div style="font-size:9px;color:#3B82F6;padding-left:68px;'
-                  'border-bottom:0.5px solid #eef;margin-bottom:3px">Seq arm</div>')
-        block += _row('SCOPe','class+sccs','#3B82F6', sq_sc if sq_ok else no_h, sq_ok)
-        block += _row('CATH', 'via lookup', '#3B82F6', sq_ca if sq_ok else no_h, sq_ok)
-        block += _row('PDB',  'top hits',   '#3B82F6', sq_pb if sq_ok else no_h, sq_ok)
-        # Struct arm
-        block += ('<div style="font-size:9px;color:#0F6E56;padding-left:68px;'
-                  'border-bottom:0.5px solid #eef;margin-top:4px;margin-bottom:3px">Struct arm</div>')
-        block += _row('SCOPe','crosswalk','#0F6E56', st_sc if st_ok else no_h, st_ok)
-        block += _row('CATH', 'direct',   '#0F6E56', st_ca if st_ok else no_h, st_ok)
-        block += _row('PDB',  'top hits', '#0F6E56', st_pb if st_ok else no_h, st_ok)
-        # HH arm
-        block += ('<div style="font-size:9px;color:#7F77DD;padding-left:68px;'
-                  'border-bottom:0.5px solid #eef;margin-top:4px;margin-bottom:3px">Profile arm</div>')
-        block += _row('SCOPe','direct sccs','#7F77DD', hh_sc if hh_ok else no_h, hh_ok)
-        return block
-
-    # Ticks ruler
+    # ── build full HTML ───────────────────────────────────────────────────
     ticks = ''.join(
-        '<span style="position:absolute;left:%.0f%%;font-size:9px;color:#ccc;'
-        'transform:translateX(-50%%)">%d</span>' % (p, int(p * seq_len / 100))
-        for p in [0, 25, 50, 75, 100]
+        '<span style="position:absolute;left:%.0f%%;font-size:9px;color:#bbb;'
+        'transform:translateX(-50%%)">%d</span>' % (p, int(p*seq_len/100))
+        for p in [0,25,50,75,100]
     )
     legend = ' &nbsp;'.join(
-        '<span style="color:' + SCOP_COLORS.get(k,'#888') + '">&#9632;</span>'
-        '<span style="font-size:9px">' + k + '</span>'
+        '<span style="color:'+SCOP_COLORS.get(k,'#888')+'">&#9632;</span>'
+        '<span style="font-size:9px;color:#666">'+k+'</span>'
         for k in SCOP_CLASSES
     )
 
-    # Build per-domain blocks
+    body = ''
     if domains:
-        blocks_html = ''
         for dom in domains:
-            blocks_html += _domain_block(
-                dom['domain_idx'], dom['qstart'], dom['qend'],
-                dom['df_seq_sub'], dom['df_str_sub'], dom['df_hh_sub'],
-                seq_len, len(domains)
-            )
-            if dom['domain_idx'] < len(domains):
-                blocks_html += '<div style="border-top:1px dashed #e0e0e0;margin:6px 0"></div>'
+            qs = dom['qstart']; qe = dom['qend']; idx = dom['domain_idx']
+            n  = len(domains)
+            # Domain section header
+            if n > 1:
+                body += ('<div style="font-size:11px;font-weight:600;color:#333;'
+                         'margin:14px 0 6px 0;padding:5px 0 5px 110px;'
+                         'border-bottom:1.5px solid #c8d0e0">'
+                         'Domain %d &nbsp;·&nbsp; aa %d–%d</div>' % (idx, qs, qe))
+            # Arm bars
+            for lbl,col,ann,segs,ok in _seq_bars(dom['df_seq_sub']):
+                body += _bar('Seq · '+lbl, col, ann, segs, ok)
+            body += '<div style="height:4px"></div>'
+            for lbl,col,ann,segs,ok in _str_bars(dom['df_str_sub']):
+                body += _bar('Str · '+lbl, col, ann, segs, ok)
+            body += '<div style="height:4px"></div>'
+            for lbl,col,ann,segs,ok in _hh_bars(dom['df_hh_sub']):
+                body += _bar('HH · '+lbl, col, ann, segs, ok)
     else:
-        # Fallback: global bars
-        sq_sc,sq_ca,sq_pb,sq_ok = _seq_segs(df_seq, seq_len)
-        st_sc,st_ca,st_pb,st_ok = _str_segs(df_str, seq_len)
-        hh_sc,hh_ca,hh_pb,hh_ok = _hh_segs(df_hh,  seq_len)
-        no_h = '<span style="font-size:9px;color:#ccc;padding-left:4px">no hits</span>'
-        blocks_html = ''
-        blocks_html += '<div style="font-size:9px;color:#3B82F6;padding-left:68px;border-bottom:0.5px solid #eef;margin-bottom:3px">Seq arm</div>'
-        blocks_html += _row('SCOPe','class+sccs','#3B82F6', sq_sc if sq_ok else no_h, sq_ok)
-        blocks_html += _row('CATH', 'via lookup', '#3B82F6', sq_ca if sq_ok else no_h, sq_ok)
-        blocks_html += _row('PDB',  'top hits',   '#3B82F6', sq_pb if sq_ok else no_h, sq_ok)
-        blocks_html += '<div style="font-size:9px;color:#0F6E56;padding-left:68px;border-bottom:0.5px solid #eef;margin-top:4px;margin-bottom:3px">Struct arm</div>'
-        blocks_html += _row('SCOPe','crosswalk','#0F6E56', st_sc if st_ok else no_h, st_ok)
-        blocks_html += _row('CATH', 'direct',   '#0F6E56', st_ca if st_ok else no_h, st_ok)
-        blocks_html += _row('PDB',  'top hits', '#0F6E56', st_pb if st_ok else no_h, st_ok)
-        blocks_html += '<div style="font-size:9px;color:#7F77DD;padding-left:68px;border-bottom:0.5px solid #eef;margin-top:4px;margin-bottom:3px">Profile arm</div>'
-        blocks_html += _row('SCOPe','direct sccs','#7F77DD', hh_sc if hh_ok else no_h, hh_ok)
+        # No domain clustering — show global bars
+        for lbl,col,ann,segs,ok in _seq_bars(df_seq):
+            body += _bar('Seq · '+lbl, col, ann, segs, ok)
+        body += '<div style="height:4px"></div>'
+        for lbl,col,ann,segs,ok in _str_bars(df_str):
+            body += _bar('Str · '+lbl, col, ann, segs, ok)
+        body += '<div style="height:4px"></div>'
+        for lbl,col,ann,segs,ok in _hh_bars(df_hh):
+            body += _bar('HH · '+lbl, col, ann, segs, ok)
 
-    n_rows = len(domains) * 7 if domains else 7
-    height = 80 + n_rows * 20
+    n_dom = len(domains) if domains else 1
+    # 9 bars × 27px + 3 gaps × 4px + domain headers × 40px + ruler/tip/legend = overhead
+    height = 80 + n_dom * (9 * 27 + 3 * 4 + 40)
 
     html = (
         '<!DOCTYPE html><html><head><meta charset="utf-8">'
-        '<style>body{margin:0;padding:4px 0 2px;font-family:-apple-system,sans-serif;background:transparent}</style>'
-        '</head><body>'
-        '<div id="tip" style="height:16px;font-size:10px;font-family:monospace;color:#666;'
-        'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:4px"></div>'
-        '<div style="position:relative;height:12px;margin-bottom:4px">'
-        '<div style="position:absolute;top:6px;left:0;right:0;height:0.5px;background:#dde"></div>'
+        '<style>body{margin:0;padding:4px 0;font-family:-apple-system,sans-serif;'
+        'background:transparent;font-size:12px}</style></head><body>'
+        '<div id="tip" style="height:18px;font-size:11px;font-family:monospace;'
+        'color:#555;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'
+        'margin-bottom:6px;padding-left:110px"></div>'
+        '<div style="position:relative;height:14px;margin-bottom:8px;padding-left:110px">'
+        '<div style="position:absolute;top:7px;left:110px;right:0;height:0.5px;background:#d8dce4"></div>'
         + ticks + '</div>'
-        + blocks_html
-        + '<div style="font-size:9px;color:#ccc;margin-top:4px">' + legend + ' &nbsp;·&nbsp; opacity=confidence</div>'
+        + body
+        + '<div style="font-size:9px;color:#bbb;margin-top:8px;padding-left:110px">'
+        + legend + ' &nbsp;·&nbsp; opacity = confidence</div>'
         '<script>function T(s){document.getElementById("tip").textContent=s||"";}</script>'
         '</body></html>'
     )
 
-    import streamlit.components.v1 as components
     components.html(html, height=height, scrolling=False)
 
 
@@ -524,31 +529,6 @@ def render_compact_summary(df_seq, df_str, df_hh, fused, seq_len):
             unsafe_allow_html=True
         )
 
-        # Functional annotation — loads only on expander click
-        if top_pdb and len(top_pdb) == 4:
-            lbl = f"Load function · UniProt · Pfam — {top_pdb.upper()}" + (f" (Domain {idx})" if multi else "")
-            with st.expander(lbl, expanded=False):
-                with st.spinner(f"Fetching {top_pdb.upper()}…"):
-                    info = fetch_pdb_function(top_pdb)
-                if info.get("uniprot_id"):
-                    uid = info["uniprot_id"]
-                    st.markdown(
-                        f'**UniProt:** [{uid}](https://www.uniprot.org/uniprot/{uid}) &nbsp;·&nbsp; ' +
-                        f'**Gene:** {info.get("gene","—")} &nbsp;·&nbsp; **Organism:** {info.get("organism","—")}'
-                    )
-                    if info.get("function"):
-                        st.markdown(f'_{info["function"][:400]}_')
-                    if info.get("pfam"):
-                        st.markdown("**Pfam:** " + " · ".join(
-                            f'`{p["pfam_id"]}` {p["name"]}' for p in info["pfam"][:4]))
-                    st.markdown(
-                        f'[AlphaFold structure — {uid}](https://alphafold.ebi.ac.uk/entry/{uid}) &nbsp;·&nbsp; ' +
-                        f'[{top_pdb.upper()} on RCSB](https://www.rcsb.org/structure/{top_pdb.upper()})'
-                    )
-                else:
-                    st.caption(f"No UniProt mapping for {top_pdb.upper()}.")
-                    st.markdown(f'[{top_pdb.upper()} on RCSB](https://www.rcsb.org/structure/{top_pdb.upper()})')
-
         if multi and idx < n_domains:
             st.markdown('<hr style="border:none;border-top:0.5px solid #eee;margin:12px 0"/>', unsafe_allow_html=True)
 
@@ -566,7 +546,7 @@ def render_arm_panel(title, color, df, arm, top_n=7):
         return
     hits = df.head(top_n)
 
-    st.markdown("**SCOPe classes**")
+    st.markdown("**SCOPe classes**" if arm != "str" else "**CATH → SCOPe class** *(structure arm gives class letter only)*")
     if arm == "seq":
         for _, r in hits.iterrows():
             sccs = lk.get(str(r["target"]),{}).get("sccs","—")
@@ -581,7 +561,7 @@ def render_arm_panel(title, color, df, arm, top_n=7):
             col  = SCOP_COLORS.get(cls,"#888")
             lddt = float(r.get("lddt",0))
             lc   = lddt_color(lddt)
-            st.markdown(f'<span style="color:{col}">●</span> `{cc}` → {SCOP_CLASSES.get(cls,cls)} · <span style="color:{lc}">lDDT={lddt:.2f}</span>', unsafe_allow_html=True)
+            st.markdown(f'<span style="color:{col}">●</span> CATH:`{cc}` → class **{cls}** ({SCOP_CLASSES.get(cls,cls)}) · <span style="color:{lc}">lDDT={lddt:.2f}</span>', unsafe_allow_html=True)
     else:
         for _, r in hits.iterrows():
             sccs = str(r.get("sccs","—"))
