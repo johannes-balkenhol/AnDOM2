@@ -254,7 +254,7 @@ def render_three_domain_maps(df_seq, df_str, df_hh, seq_len):
                     ('PDB',   '#3B82F6', 'top hits',     '', False)]
         rows = []
         sc = ca = pb = ''
-        for _, r in df.head(5).iterrows():
+        for _hi, (_, r) in enumerate(df.head(3).iterrows()):
             qs = int(r.get('qstart',0)); qe = int(r.get('qend',0))
             tgt  = str(r['target'])
             cls  = lk.get(tgt,{}).get('cls','?')
