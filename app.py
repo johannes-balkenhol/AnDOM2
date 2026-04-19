@@ -281,7 +281,7 @@ def render_three_domain_maps(df_seq, df_str, df_hh, seq_len):
                     ('CATH', '#0F6E56','direct',   '',False),
                     ('PDB',  '#0F6E56','top hits', '',False)]
         sc = ca = pb = ''
-        for _, r in df.head(5).iterrows():
+        for _hi, (_, r) in enumerate(df.head(3).iterrows()):
             qs = int(r.get('qstart',0)); qe = int(r.get('qend',0))
             tgt  = str(r['target'])
             cc   = get_cath_code(tgt) or '?'
@@ -306,7 +306,7 @@ def render_three_domain_maps(df_seq, df_str, df_hh, seq_len):
                     ('CATH', '#7F77DD','via PDB hit','',False),
                     ('PDB',  '#7F77DD','top hits',   '',False)]
         sc = ca = pb = ''
-        for _, r in df.head(5).iterrows():
+        for _hi, (_, r) in enumerate(df.head(3).iterrows()):
             qs   = int(r.get('qstart',0)); qe = int(r.get('qend',0))
             sccs = str(r.get('sccs','?'))
             cls  = sccs[0] if sccs not in ('--','?','') and not sccs.startswith('~') else '?'
