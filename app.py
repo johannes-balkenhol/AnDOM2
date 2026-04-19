@@ -94,7 +94,8 @@ def _save_cache(seq, df_seq, df_str, df_hh):
         for k, df in (('df_seq',df_seq),('df_str',df_str),('df_hh',df_hh)):
             data[k] = df.to_dict(orient='records') if df is not None and len(df)>0 else []
         p.write_text(json.dumps(data))
-    except: pass
+    except Exception as e:
+        import logging; logging.warning(f"Cache save failed: {e}")
 
 def pdb_from_scope(domain: str) -> str:
     try:
