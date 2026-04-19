@@ -21,6 +21,7 @@ from search.ensemble import (
     domain_bar_html, add_scores, fuse_results_three,
     fetch_pdb_function,
 )
+import hashlib, json, time
 from batch.processor import (
     BatchManager, parse_fasta_text, validate_sequences,
     MAX_SEQUENCES, MAX_SEQ_LEN, MIN_SEQ_LEN,
@@ -70,6 +71,30 @@ def fmt_e(v) -> str:
         return f"{float(v):.2e}"
     except Exception:
         return "—"
+
+CACHE_DIR = Path(os.environ.get('ANDOM_OUTPUT_DIR', 'output')) / 'cache'
+CACHE_TTL = 48 * 3600
+
+def _cache_key(seq): return hashlib.md5(seq.strip().upper().encode()).hexdigest()
+
+def _load_cache(seq):
+    try:
+        p = CACHE_DIR / (_cache_key(seq) + '.json')
+        if not p.exists(): return None
+        data = json.loads(p.read_text())
+        if time.time() - data.get('ts', 0) > CACHE_TTL: return None
+        return {k: pd.DataFrame(data[k]) if data.get(k) else None for k in ('df_seq','df_str','df_hh')}
+    except: return None
+
+def _save_cache(seq, df_seq, df_str, df_hh):
+    try:
+        CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        p = CACHE_DIR / (_cache_key(seq) + '.json')
+        data = {'ts': time.time()}
+        for k, df in (('df_seq',df_seq),('df_str',df_str),('df_hh',df_hh)):
+            data[k] = df.to_dict(orient='records') if df is not None and len(df)>0 else []
+        p.write_text(json.dumps(data))
+    except: pass
 
 def pdb_from_scope(domain: str) -> str:
     try:
@@ -718,10 +743,17 @@ with page[0]:
 
             df_seq = df_str = df_hh = None
             _tid = _uuid.uuid4().hex[:8]
+            _cached = _load_cache(clean_seq)
+            if _cached:
+                df_seq = _cached['df_seq']; df_str = _cached['df_str']; df_hh = _cached['df_hh']
+                st.info('⚡ Cached result (< 48h). Run again to refresh.')
 
             col_s, col_t, col_h = st.columns(3)
             with col_s:
-                with st.spinner("Sequence search…"):
+                if _cached and df_seq is not None:
+                    st.success(f"Sequence: {len(df_seq)} SCOPe hits (cached)")
+                else:
+                  with st.spinner("Sequence search…"):
                     df_seq, err = seq_search.run(fasta, evalue=evalue, iterations=iterations, tmp_dir=f"/output/tmp/{_tid}")
                 if err: st.error(f"Sequence search failed: {err}")
                 elif df_seq is None or len(df_seq)==0: st.warning("No sequence hits.")
