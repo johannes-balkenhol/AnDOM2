@@ -787,6 +787,7 @@ with page[0]:
                 else:
                     st.info("Deep search disabled.")
 
+            if not _cached: _save_cache(clean_seq, df_seq, df_str, df_hh)
             df_seq, df_str = add_scores(df_seq, df_str)
             fused = fuse_results_three(df_seq, df_str, df_hh)
 
