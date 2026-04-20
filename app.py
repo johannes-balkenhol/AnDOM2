@@ -280,7 +280,7 @@ def render_three_domain_maps(df_seq, df_str, df_hh, seq_len):
                     ('PDB',   '#3B82F6', 'top hits',     '', False)]
         rows = []
         sc = ca = pb = ''
-        for _hi, (_, r) in enumerate(df.head(3).iterrows()):
+        for _hi, (_, r) in enumerate(df.head(1).iterrows()):
             qs = int(r.get('qstart',0)); qe = int(r.get('qend',0))
             tgt  = str(r['target'])
             cls  = lk.get(tgt,{}).get('cls','?')
@@ -307,7 +307,7 @@ def render_three_domain_maps(df_seq, df_str, df_hh, seq_len):
                     ('CATH', '#0F6E56','direct',   '',False),
                     ('PDB',  '#0F6E56','top hits', '',False)]
         sc = ca = pb = ''
-        for _hi, (_, r) in enumerate(df.head(3).iterrows()):
+        for _hi, (_, r) in enumerate(df.head(1).iterrows()):
             qs = int(r.get('qstart',0)); qe = int(r.get('qend',0))
             tgt  = str(r['target'])
             cc   = get_cath_code(tgt) or '?'
@@ -332,7 +332,7 @@ def render_three_domain_maps(df_seq, df_str, df_hh, seq_len):
                     ('CATH', '#7F77DD','via PDB hit','',False),
                     ('PDB',  '#7F77DD','top hits',   '',False)]
         sc = ca = pb = ''
-        for _hi, (_, r) in enumerate(df.head(3).iterrows()):
+        for _hi, (_, r) in enumerate(df.head(1).iterrows()):
             qs   = int(r.get('qstart',0)); qe = int(r.get('qend',0))
             sccs = str(r.get('sccs','?'))
             cls  = sccs[0] if sccs not in ('--','?','') and not sccs.startswith('~') else '?'
@@ -416,7 +416,7 @@ def render_three_domain_maps(df_seq, df_str, df_hh, seq_len):
         '</body></html>'
     )
 
-    components.html(html, height=height, scrolling=False)
+    components.html(html, height=height, scrolling=True)
 
 
 def render_compact_summary(df_seq, df_str, df_hh, fused, seq_len):
@@ -754,13 +754,13 @@ with page[0]:
                 if _cached and df_seq is not None:
                     st.success(f"Sequence: {len(df_seq)} SCOPe hits (cached)")
                 else:
-                  with st.spinner("Sequence search…"):
-                    df_seq, err = seq_search.run(fasta, evalue=evalue, iterations=iterations, tmp_dir=f"/output/tmp/{_tid}")
-                if err: st.error(f"Sequence search failed: {err}")
-                elif df_seq is None or len(df_seq)==0: st.warning("No sequence hits.")
-                else:
-                    df_seq = df_seq.head(max_hits)
-                    st.success(f"Sequence: {len(df_seq)} SCOPe hits")
+                    with st.spinner("Sequence search…"):
+                        df_seq, err = seq_search.run(fasta, evalue=evalue, iterations=iterations, tmp_dir=f"/output/tmp/{_tid}")
+                    if err: st.error(f"Sequence search failed: {err}")
+                    elif df_seq is None or len(df_seq)==0: st.warning("No sequence hits.")
+                    else:
+                        df_seq = df_seq.head(max_hits)
+                        st.success(f"Sequence: {len(df_seq)} SCOPe hits")
 
             with col_t:
                 if use_struct_run:
