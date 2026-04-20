@@ -34,6 +34,32 @@ def predict_structure(sequence: str, tmp_dir: Path | None = None) -> tuple:
             f"limit ({ESMFOLD_MAXLEN} aa). Disable structural search or "
             f"install ESMFold locally for longer sequences."
         )
+    # ESMFold cache — skip API call if already folded
+    import hashlib as _hl, shutil as _sh
+    _fcdir = Path('/app/output/cache')
+    _fcdir.mkdir(parents=True, exist_ok=True)
+    _fkey = _hl.md5(clean.encode()).hexdigest()
+    _fcache = _fcdir / (_fkey + '_fold.pdb')
+    if _fcache.exists():
+        _odir = Path(tmp_dir) if tmp_dir else Path(TMP_DIR)
+        _odir.mkdir(parents=True, exist_ok=True)
+        _pdb = _odir / 'query_struct.pdb'
+        _sh.copy(_fcache, _pdb)
+        return str(_pdb), None
+
+    # ESMFold cache — skip API call if already folded
+    import hashlib as _hl, shutil as _sh
+    _fcdir = Path('/app/output/cache')
+    _fcdir.mkdir(parents=True, exist_ok=True)
+    _fkey = _hl.md5(clean.encode()).hexdigest()
+    _fcache = _fcdir / (_fkey + '_fold.pdb')
+    if _fcache.exists():
+        _odir = Path(tmp_dir) if tmp_dir else Path(TMP_DIR)
+        _odir.mkdir(parents=True, exist_ok=True)
+        _pdb = _odir / 'query_struct.pdb'
+        _sh.copy(_fcache, _pdb)
+        return str(_pdb), None
+
     try:
         r = requests.post(
             ESMFOLD_API,
@@ -48,6 +74,10 @@ def predict_structure(sequence: str, tmp_dir: Path | None = None) -> tuple:
         out_dir.mkdir(parents=True, exist_ok=True)
         pdb_path = out_dir / "query_struct.pdb"
         pdb_path.write_text(r.text)
+        try: _fcache.write_text(r.text)
+        except: pass
+        try: _fcache.write_text(r.text)
+        except: pass
 
         # also keep project-root copy for backwards-compatible download
         try:

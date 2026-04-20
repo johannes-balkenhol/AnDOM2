@@ -229,14 +229,15 @@ def _seg(df, seq_len, arm, mode, row_start=0, row_end=None):
     return segs
 
 
-def render_three_domain_maps(df_seq, df_str, df_hh, seq_len):
+def render_three_domain_maps(df_seq, df_str, df_hh, seq_len, domains=None):
     import streamlit.components.v1 as components
     import math
     from db.lookup import get_cath_code, cath_code_to_scop_class
     from search.ensemble import get_domain_clusters
     lk = lookup.all_domains()
 
-    domains = get_domain_clusters(df_seq, df_str, df_hh, min_overlap=0.6)
+    if domains is None:
+        domains = get_domain_clusters(df_seq, df_str, df_hh, min_overlap=0.6)
 
     # ── segment builder ───────────────────────────────────────────────────
     def _seg(qs, qe, color, opacity, label, tip):
@@ -419,15 +420,16 @@ def render_three_domain_maps(df_seq, df_str, df_hh, seq_len):
     components.html(html, height=height, scrolling=True)
 
 
-def render_compact_summary(df_seq, df_str, df_hh, fused, seq_len):
+def render_compact_summary(df_seq, df_str, df_hh, fused, seq_len, domains=None):
     from db.lookup import get_cath_code, cath_code_to_scop_class
     from search.ensemble import get_domain_clusters
     lk = lookup.all_domains()
 
-    render_three_domain_maps(df_seq, df_str, df_hh, seq_len)
+    render_three_domain_maps(df_seq, df_str, df_hh, seq_len, domains)
 
     # ── Per-domain ensemble cards ─────────────────────────────────────────────
-    domains = get_domain_clusters(df_seq, df_str, df_hh, min_overlap=0.6)
+    if domains is None:
+        domains = get_domain_clusters(df_seq, df_str, df_hh, min_overlap=0.6)
 
     # Fallback: if clustering gives 0 domains (all arms empty), skip
     if not domains:
@@ -801,7 +803,9 @@ with page[0]:
 
             # ── DEFAULT: COMPACT SUMMARY ──────────────────────────────────────
             st.subheader("Domain annotation")
-            render_compact_summary(df_seq, df_str, df_hh, fused, bar_len)
+            from search.ensemble import get_domain_clusters as _gdc_main
+            _domains_main = _gdc_main(df_seq, df_str, df_hh, min_overlap=0.6)
+            render_compact_summary(df_seq, df_str, df_hh, fused, bar_len, _domains_main)
 
             # ── EXPERT MODE ───────────────────────────────────────────────────
             with st.expander("Expert mode — detailed three-arm results", expanded=False):
