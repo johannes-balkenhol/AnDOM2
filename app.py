@@ -316,11 +316,11 @@ def render_three_domain_maps(df_seq, df_str, df_hh, seq_len):
             pdb  = tgt[:4].lower()
             col  = SCOP_COLORS.get(cls,'#888')
             op   = 0.4+0.6*lddt
-            sc += _seg(qs,qe,col,op,'cls:'+cls,
+            sc += _seg(qs,qe,col,op,'cls:'+cls if _hi==0 else '',
                        'CATH→SCOPe: class %s | lDDT=%.2f | %d-%d aa'%(cls,lddt,qs,qe))
-            ca += _seg(qs,qe,'#0F6E56',op,cc,
+            ca += _seg(qs,qe,'#0F6E56',op,cc if _hi==0 else '',
                        'CATH: %s | lDDT=%.2f | %d-%d aa'%(cc,lddt,qs,qe))
-            pb += _seg(qs,qe,'#0F6E56',op*0.85,pdb.upper(),
+            pb += _seg(qs,qe,'#0F6E56',op*0.85,pdb.upper() if _hi==0 else '',
                        'PDB: %s | lDDT=%.2f | %d-%d aa'%(pdb.upper(),lddt,qs,qe))
         return [('SCOPe','#0F6E56','crosswalk',sc,True),
                 ('CATH', '#0F6E56','direct',   ca,True),
@@ -344,9 +344,9 @@ def render_three_domain_maps(df_seq, df_str, df_hh, seq_len):
             op   = 0.3+0.7*prob
             sc += _seg(qs,qe,col,op,sccs if _hi==0 else '',
                        'HH: %s | SCOPe: %s | prob=%.0f%% | %d-%d aa'%(name,sccs,prob*100,qs,qe))
-            ca += _seg(qs,qe,'#7F77DD',op*0.85,cc,
+            ca += _seg(qs,qe,'#7F77DD',op*0.85,cc if _hi==0 else '',
                        'CATH: %s | %s | %d-%d aa'%(cc,name,qs,qe))
-            pb += _seg(qs,qe,'#7F77DD',op,pdb.upper(),
+            pb += _seg(qs,qe,'#7F77DD',op,pdb.upper() if _hi==0 else '',
                        'PDB: %s | prob=%.0f%% | %d-%d aa'%(pdb.upper(),prob*100,qs,qe))
         return [('SCOPe','#7F77DD','direct sccs',sc,True),
                 ('CATH', '#7F77DD','via PDB hit', ca,True),
