@@ -292,12 +292,15 @@ def render_three_domain_maps(df_seq, df_str, df_hh, seq_len, domains=None):
             pdb  = tgt[1:5].lower() if len(tgt)>=5 else ''
             col  = SCOP_COLORS.get(cls,'#888')
             op   = max(0.3, min(0.95, -math.log10(max(ev,1e-300))/30))
+            _scope_url = 'https://scop.berkeley.edu/search/?key=' + sccs if sccs not in ('?','--','') else ''
             sc += _seg(qs,qe,col,op,sccs if _hi==0 else '',
-                       'SCOPe: %s | e=%.1e | %d-%d aa | %s'%(sccs,ev,qs,qe,desc))
+                       'SCOPe: %s | e=%.1e | %d-%d aa | %s — click to open SCOPe'%(sccs,ev,qs,qe,desc), _scope_url)
+            _cath_url = 'https://www.cathdb.info/version/v4_3_0/superfamily/' + cc if cc not in ('?','--','') else ''
             ca += _seg(qs,qe,col,op*0.8,cc if _hi==0 else '',
-                       'CATH: %s | %s | %d-%d aa'%(cc,tgt,qs,qe))
+                       'CATH: %s | %s | %d-%d aa — click to open CATH'%(cc,tgt,qs,qe), _cath_url)
+            _pdb_url = 'https://www.rcsb.org/structure/' + pdb.upper() if pdb else ''
             pb += _seg(qs,qe,'#3B82F6',op,pdb.upper() if _hi==0 else '',
-                       'PDB: %s | e=%.1e | %d-%d aa'%(pdb.upper(),ev,qs,qe))
+                       'PDB: %s | e=%.1e | %d-%d aa — click to open RCSB'%(pdb.upper(),ev,qs,qe), _pdb_url)
         return [('SCOPe','#3B82F6','class · sccs',sc,True),
                 ('CATH', '#3B82F6','via lookup',  ca,True),
                 ('PDB',  '#3B82F6','top hits',    pb,True)]
@@ -319,8 +322,9 @@ def render_three_domain_maps(df_seq, df_str, df_hh, seq_len, domains=None):
             op   = 0.4+0.6*lddt
             sc += _seg(qs,qe,col,op,'cls:'+cls if _hi==0 else '',
                        'CATH→SCOPe: class %s | lDDT=%.2f | %d-%d aa'%(cls,lddt,qs,qe))
+            _cath_url2 = 'https://www.cathdb.info/version/v4_3_0/superfamily/' + cc if cc not in ('?','--','') else ''
             ca += _seg(qs,qe,'#0F6E56',op,cc if _hi==0 else '',
-                       'CATH: %s | lDDT=%.2f | %d-%d aa'%(cc,lddt,qs,qe))
+                       'CATH: %s | lDDT=%.2f | %d-%d aa — click to open CATH'%(cc,lddt,qs,qe), _cath_url2)
             pb += _seg(qs,qe,'#0F6E56',op*0.85,pdb.upper() if _hi==0 else '',
                        'PDB: %s | lDDT=%.2f | %d-%d aa'%(pdb.upper(),lddt,qs,qe))
         return [('SCOPe','#0F6E56','crosswalk',sc,True),
@@ -751,6 +755,12 @@ with page[0]:
                 df_seq = _cached['df_seq']; df_str = _cached['df_str']; df_hh = _cached['df_hh']
                 st.info('⚡ Cached result (< 48h). Run again to refresh.')
 
+            # Progress indicator
+            if not _cached:
+                _est = '~20s'
+                if use_hhblits: _est = '~5-10 min (HHblits enabled)'
+                st.info(f'🔍 Running search — estimated time: {_est}')
+
             col_s, col_t, col_h = st.columns(3)
             with col_s:
                 if _cached and df_seq is not None:
@@ -788,7 +798,7 @@ with page[0]:
                         st.success(f"HHblits: {len(df_hh)} PDB70 hits")
                     else: st.info("HHblits: no hits found")
                 else:
-                    st.info("Deep search disabled.")
+                    pass  # HHblits disabled — no message shown
 
             if not _cached: _save_cache(clean_seq, df_seq, df_str, df_hh)
             df_seq, df_str = add_scores(df_seq, df_str)
