@@ -240,7 +240,7 @@ def render_three_domain_maps(df_seq, df_str, df_hh, seq_len, domains=None):
         domains = get_domain_clusters(df_seq, df_str, df_hh, min_overlap=0.6)
 
     # ── segment builder ───────────────────────────────────────────────────
-    def _seg(qs, qe, color, opacity, label, tip):
+    def _seg(qs, qe, color, opacity, label, tip, url=''):
         l = (qs / seq_len) * 100
         w = max(((qe - qs) / seq_len) * 100, 1.0)
         ts = tip.replace('"', '&quot;').replace("'", '&#39;')
