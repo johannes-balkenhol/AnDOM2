@@ -817,7 +817,9 @@ with page[0]:
 
             if not _cached: _save_cache(clean_seq, df_seq, df_str, df_hh)
             df_seq, df_str = add_scores(df_seq, df_str)
-            fused = fuse_results_three(df_seq, df_str, df_hh)
+            # Cap HH hits for fast fusion (top 30 sufficient)
+            _df_hh_fuse = df_hh.head(30) if df_hh is not None and len(df_hh) > 30 else df_hh
+            fused = fuse_results_three(df_seq, df_str, _df_hh_fuse)
 
             bar_len = max(
                 df_seq["qend"].max() if df_seq is not None and len(df_seq)>0 else 1,
