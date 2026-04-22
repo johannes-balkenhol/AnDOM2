@@ -638,6 +638,21 @@ def render_arm_panel(title, color, df, arm, top_n=7):
             st.caption(extra)
         with c2:
             pass  # expander below handles func
+        # Show pairwise alignment (PSI-BLAST style) for seq arm
+        if arm == "seq" and "qaln" in r.index and str(r.get("qaln","")) not in ("","nan","?"):
+            qaln = str(r.get("qaln",""))
+            taln = str(r.get("taln",""))
+            qs   = int(r.get("qstart",1))
+            ts   = int(r.get("tstart",1))
+            pid  = float(r.get("pident",0))
+            # Build match line
+            match = "".join("|" if a==b else " " for a,b in zip(qaln,taln))
+            aln_txt = (f"Query  {qs:4d}  {qaln}  {qs+len(qaln)-1}\n"
+                       f"             {match}\n"
+                       f"Sbjct  {ts:4d}  {taln}  {ts+len(taln)-1}\n"
+                       f"Identity: {pid:.1f}%")
+            with st.expander(f"Alignment: {pdb_id.upper()} ({pid:.0f}% identity)", expanded=False):
+                st.code(aln_txt, language=None)
         with st.expander(f"Function: {pdb_id.upper()}", expanded=False):
             with st.spinner(f"Fetching {pdb_id.upper()}…"):
                 info = fetch_pdb_function(pdb_id)
