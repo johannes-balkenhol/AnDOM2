@@ -65,7 +65,7 @@ def run(
         (f"{MMSEQS} search {query_db} {SCOPE_DB_95 if use_95 else SCOPE_DB} {result_db} {mmseqs_tmp} "
          f"--num-iterations {iterations} -e {evalue} -v 0 --threads {threads}"),
         (f"{MMSEQS} convertalis {query_db} {SCOPE_DB_95 if use_95 else SCOPE_DB} {result_db} {result_tsv} "
-         f"--format-output query,target,evalue,bits,qstart,qend,tstart,tend,pident -v 0"),
+         f"--format-output query,target,evalue,bits,qstart,qend,tstart,tend,pident,qaln,taln -v 0"),
     ]
     for cmd in cmds:
         r = subprocess.run(cmd, shell=True, capture_output=True, text=True)
@@ -78,7 +78,7 @@ def run(
     df = pd.read_csv(
         result_tsv, sep="\t",
         names=["query", "target", "evalue", "bits",
-               "qstart", "qend", "tstart", "tend", "pident"]
+               "qstart", "qend", "tstart", "tend", "pident", "qaln", "taln"]
     )
 
     lk = lookup.all_domains()

@@ -244,16 +244,19 @@ def render_three_domain_maps(df_seq, df_str, df_hh, seq_len, domains=None):
         l = (qs / seq_len) * 100
         w = max(((qe - qs) / seq_len) * 100, 1.0)
         ts = tip.replace('"', '&quot;').replace("'", '&#39;')
+        us = (url or '').replace('"', '&quot;').replace("'", '&#39;')
         inner = ''
         if w > 4:
             inner = ('<span style="position:absolute;left:4px;right:4px;top:50%;'
                      'transform:translateY(-50%);font-size:10px;font-weight:500;'
                      'color:rgba(255,255,255,0.95);white-space:nowrap;overflow:hidden;'
-                     'text-overflow:ellipsis">' + label + '</span>')
+                     'text-overflow:ellipsis;pointer-events:none">' + label + '</span>')
+        cur = 'pointer' if us else 'default'
         sty = ('position:absolute;top:1px;left:%.2f%%;width:%.2f%%;height:20px;'
                'background:%s;opacity:%.2f;border-radius:3px;overflow:hidden;'
-               'cursor:default') % (l, w, color, opacity)
-        return ('<div onmouseover="T(\'' + ts + '\')" onmouseout="T()"'
+               'cursor:%s') % (l, w, color, opacity, cur)
+        click = (' onclick="O(\'' + us + '\')"') if us else ''
+        return ('<div onmouseover="T(\'' + ts + '\')" onmouseout="T()"' + click +
                 ' style="' + sty + '">' + inner + '</div>')
 
     # ── single labeled bar row ────────────────────────────────────────────
@@ -292,7 +295,7 @@ def render_three_domain_maps(df_seq, df_str, df_hh, seq_len, domains=None):
             pdb  = tgt[1:5].lower() if len(tgt)>=5 else ''
             col  = SCOP_COLORS.get(cls,'#888')
             op   = max(0.3, min(0.95, -math.log10(max(ev,1e-300))/30))
-            _scope_url = 'https://scop.berkeley.edu/search/?key=' + sccs if sccs not in ('?','--','') else ''
+            _scope_url = 'https://scop.berkeley.edu/sccs=' + sccs if sccs not in ('?','--','') else ''
             sc += _seg(qs,qe,col,op,sccs if _hi==0 else '',
                        'SCOPe: %s | e=%.1e | %d-%d aa | %s — click to open SCOPe'%(sccs,ev,qs,qe,desc), _scope_url)
             _cath_url = 'https://www.cathdb.info/version/v4_3_0/superfamily/' + cc if cc not in ('?','--','') else ''
@@ -325,8 +328,9 @@ def render_three_domain_maps(df_seq, df_str, df_hh, seq_len, domains=None):
             _cath_url2 = 'https://www.cathdb.info/version/v4_3_0/superfamily/' + cc if cc not in ('?','--','') else ''
             ca += _seg(qs,qe,'#0F6E56',op,cc if _hi==0 else '',
                        'CATH: %s | lDDT=%.2f | %d-%d aa — click to open CATH'%(cc,lddt,qs,qe), _cath_url2)
+            _pdb_url_s = 'https://www.rcsb.org/structure/' + pdb.upper() if pdb else ''
             pb += _seg(qs,qe,'#0F6E56',op*0.85,pdb.upper() if _hi==0 else '',
-                       'PDB: %s | lDDT=%.2f | %d-%d aa'%(pdb.upper(),lddt,qs,qe))
+                       'PDB: %s | lDDT=%.2f | %d-%d aa — click to open RCSB'%(pdb.upper(),lddt,qs,qe), _pdb_url_s)
         return [('SCOPe','#0F6E56','crosswalk',sc,True),
                 ('CATH', '#0F6E56','direct',   ca,True),
                 ('PDB',  '#0F6E56','top hits', pb,True)]
@@ -347,12 +351,15 @@ def render_three_domain_maps(df_seq, df_str, df_hh, seq_len, domains=None):
             cc   = str(r.get('cath_code','?')) or '?'
             col  = SCOP_COLORS.get(cls,'#888')
             op   = 0.3+0.7*prob
+            _scope_url_h = 'https://scop.berkeley.edu/sccs=' + sccs if sccs not in ('?','--','') else ''
             sc += _seg(qs,qe,col,op,sccs if _hi==0 else '',
-                       'HH: %s | SCOPe: %s | prob=%.0f%% | %d-%d aa'%(name,sccs,prob*100,qs,qe))
+                       'HH: %s | SCOPe: %s | prob=%.0f%% | %d-%d aa — click to open SCOPe'%(name,sccs,prob*100,qs,qe), _scope_url_h)
+            _cath_url_h = 'https://www.cathdb.info/version/v4_3_0/superfamily/' + cc if cc not in ('?','--','') else ''
             ca += _seg(qs,qe,'#7F77DD',op*0.85,cc if _hi==0 else '',
-                       'CATH: %s | %s | %d-%d aa'%(cc,name,qs,qe))
+                       'CATH: %s | %s | %d-%d aa — click to open CATH'%(cc,name,qs,qe), _cath_url_h)
+            _pdb_url_h = 'https://www.rcsb.org/structure/' + pdb.upper() if pdb else ''
             pb += _seg(qs,qe,'#7F77DD',op,pdb.upper() if _hi==0 else '',
-                       'PDB: %s | prob=%.0f%% | %d-%d aa'%(pdb.upper(),prob*100,qs,qe))
+                       'PDB: %s | prob=%.0f%% | %d-%d aa — click to open RCSB'%(pdb.upper(),prob*100,qs,qe), _pdb_url_h)
         return [('SCOPe','#7F77DD','direct sccs',sc,True),
                 ('CATH', '#7F77DD','via PDB hit', ca,True),
                 ('PDB',  '#7F77DD','top hits',    pb,True)]
@@ -417,7 +424,7 @@ def render_three_domain_maps(df_seq, df_str, df_hh, seq_len, domains=None):
         + body
         + '<div style="font-size:9px;color:#bbb;margin-top:8px;padding-left:110px">'
         + legend + ' &nbsp;·&nbsp; opacity = confidence</div>'
-        '<script>function T(s){document.getElementById("tip").textContent=s||"";}</script>'
+        '<script>function T(s){document.getElementById("tip").textContent=s||"";}function O(u){if(!u)return;var w=window.open(u,"_blank","noopener");if(!w){try{window.parent.postMessage({andom_url:u},"*");}catch(e){}}}</script>'
         '</body></html>'
     )
 
@@ -508,7 +515,7 @@ def render_compact_summary(df_seq, df_str, df_hh, fused, seq_len, domains=None):
         sccs_name = SCOP_FULL.get(sccs_cls,"")
         cath_c    = agreed_cath.split(".")[0] if agreed_cath and agreed_cath not in ("—","?") else "?"
         cath_name = CATH_FULL.get(cath_c,"")
-        sccs_url  = f"https://scop.berkeley.edu/search/?key={agreed_sccs}" if agreed_sccs not in ("—","?") else "#"
+        sccs_url  = f"https://scop.berkeley.edu/sccs={agreed_sccs}" if agreed_sccs not in ("—","?") else "#"
         cath_url  = f"https://www.cathdb.info/version/v4_3_0/superfamily/{agreed_cath}" if agreed_cath not in ("—","?","") else "#"
 
         # Collect top PDB per arm (deduplicated)
@@ -777,12 +784,36 @@ with page[0]:
                 st.info(f'🔍 Running search — estimated time: {_est}')
 
             col_s, col_t, col_h = st.columns(3)
+
+            # Run Seq + Struct arms in parallel — they are independent.
+            # ESMFold is network-I/O bound, MMseqs2 is a subprocess → threads OK.
+            from concurrent.futures import ThreadPoolExecutor
+            _need_seq   = not (_cached and df_seq is not None)
+            _need_struct = use_struct_run and not (_cached and df_str is not None)
+
+            _fut_seq = _fut_str = None
+            if _need_seq or _need_struct:
+                with col_s:
+                    if _need_seq: _ph_seq = st.empty(); _ph_seq.info("Sequence search running…")
+                    elif _cached: st.success(f"Sequence: {len(df_seq)} SCOPe hits (cached)")
+                with col_t:
+                    if _need_struct: _ph_str = st.empty(); _ph_str.info("Structure search running…")
+                    elif use_struct_run and _cached and df_str is not None:
+                        st.success(f"Structure: {len(df_str)} CATH hits (cached)")
+                    elif not use_struct_run: st.info("Structural search disabled.")
+
+                _ex = ThreadPoolExecutor(max_workers=2)
+                if _need_seq:
+                    _fut_seq = _ex.submit(seq_search.run, fasta, evalue=evalue,
+                                          iterations=iterations, tmp_dir=f"/output/tmp/{_tid}")
+                if _need_struct:
+                    _fut_str = _ex.submit(str_search.run, clean_seq)
+                _ex.shutdown(wait=True)
+
             with col_s:
-                if _cached and df_seq is not None:
-                    st.success(f"Sequence: {len(df_seq)} SCOPe hits (cached)")
-                else:
-                    with st.spinner("Sequence search…"):
-                        df_seq, err = seq_search.run(fasta, evalue=evalue, iterations=iterations, tmp_dir=f"/output/tmp/{_tid}")
+                if _fut_seq is not None:
+                    df_seq, err = _fut_seq.result()
+                    _ph_seq.empty()
                     if err: st.error(f"Sequence search failed: {err}")
                     elif df_seq is None or len(df_seq)==0: st.warning("No sequence hits.")
                     else:
@@ -790,16 +821,14 @@ with page[0]:
                         st.success(f"Sequence: {len(df_seq)} SCOPe hits")
 
             with col_t:
-                if use_struct_run:
-                    with st.spinner("Structure search…"):
-                        df_str, err2 = str_search.run(clean_seq)
+                if _fut_str is not None:
+                    df_str, err2 = _fut_str.result()
+                    _ph_str.empty()
                     if err2: st.error(f"Structure search failed: {err2}")
                     elif df_str is None or len(df_str)==0: st.warning("No structural hits.")
                     else:
                         df_str = df_str.head(max_hits)
                         st.success(f"Structure: {len(df_str)} CATH hits")
-                else:
-                    st.info("Structural search disabled.")
 
             with col_h:
                 if use_hhblits:
